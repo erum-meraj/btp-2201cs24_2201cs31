@@ -1,42 +1,40 @@
 # agents/evaluator_agent.py
-"""
-
-EvaluatorAgent:
- - wraps your UtilityEvaluator to score candidate placements
- - returns sorted results with per-candidate cost and optional per-task marginal improvements
-
-"""
-
-from typing import List, Dict, Any
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.tools import StructuredTool
 from core.cost_eval import UtilityEvaluator
-from core.workflow import Workflow
-from core.environment import Environment
+
 
 class EvaluatorAgent:
-    def __init__(self, util: UtilityEvaluator = None):
-        self.util = util or UtilityEvaluator()
+    """Evaluator agent — uses Gemini for reasoning and a Utility tool for calculations."""
 
-    def score(self, workflow: Workflow, env: Environment, placement: List[int]) -> float:
-        """
-        Return the total_offloading_cost computed by UtilityEvaluator.total_offloading_cost.
-        Expects env to expose DR_pair (pairwise DR), DE, VR, VE as attributes (see your Environment).
-        """
-        params = {
-            "DR": getattr(env, "DR_pair", {}),
-            "DE": getattr(env, "DE", {}),
-            "VR": getattr(env, "VR", {}),
-            "VE": getattr(env, "VE", {}),
-        }
-        return self.util.total_offloading_cost(workflow, placement, params)
+    def __init__(self, api_key: str):
+        self.utility_tool = StructuredTool.from_function(
+            func=UtilityEvaluator().evaluate,
+            name="utility_evaluator",
+            description="Computes utility metrics (latency, cost, and energy consumption) for a given offloading plan."
+        )
 
-    def score_candidates(self, workflow: Workflow, env: Environment, candidates: List[List[int]]) -> List[Dict[str, Any]]:
-        results = []
-        base_score = None
-        for cand in candidates:
-            cost = self.score(workflow, env, cand)
-            results.append({"placement": cand, "cost": cost})
-            if base_score is None:
-                base_score = cost
-        # sort ascending (lower cost better)
-        results.sort(key=lambda x: (float('inf') if x["cost"] is None else x["cost"]))
-        return results
+        self.llm = ChatGoogleGenerativeAI(
+            model="gemini-1.5-flash",
+            google_api_key=api_key,
+            temperature=0.4,
+        ).bind_tools([self.utility_tool])
+
+    def evaluate_plan(self, plan: str, environment: dict):
+        prompt = f"""
+        You are the Evaluator Agent. You receive a plan from the Planner Agent.
+
+        Plan:
+        {plan}
+
+        Evaluate this plan by reasoning through it and using the `utility_evaluator` tool
+        when appropriate to compute metrics for task offloading.
+
+        Environment Context:
+        {environment}
+
+        Return a structured summary of the evaluation, including utility values and suggestions for improvement.
+        """
+
+        response = self.llm.invoke(prompt)
+        return response.content
