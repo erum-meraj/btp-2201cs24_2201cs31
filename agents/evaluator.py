@@ -9,7 +9,7 @@ class EvaluatorAgent:
 
     def __init__(self, api_key: str):
         self.utility_tool = StructuredTool.from_function(
-            func=UtilityEvaluator().evaluate,
+            func=UtilityEvaluator().total_offloading_cost,
             name="utility_evaluator",
             description="Computes utility metrics (latency, cost, and energy consumption) for a given offloading plan."
         )
