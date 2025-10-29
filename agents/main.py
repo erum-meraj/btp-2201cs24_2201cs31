@@ -27,14 +27,14 @@ class AgenticState(TypedDict, total=False):
 def build_agentic_workflow():
     workflow = StateGraph(AgenticState)
 
-    planner = PlannerAgent(GEMINI_API_KEY)
-    evaluator = EvaluatorAgent(GEMINI_API_KEY)
-    output = OutputAgent(GEMINI_API_KEY)
+    planner = PlannerAgent(GEMINI_API_KEY) # type: ignore
+    evaluator = EvaluatorAgent(GEMINI_API_KEY) # type: ignore
+    output = OutputAgent(GEMINI_API_KEY)  # type: ignore
 
     # Add nodes
-    workflow.add_node("planner", planner.run)
-    workflow.add_node("evaluator", evaluator.run)
-    workflow.add_node("output", output.run)
+    workflow.add_node("planner", planner.run) # type: ignore
+    workflow.add_node("evaluator", evaluator.run) # type: ignore
+    workflow.add_node("output", output.run) # type: ignore
 
     # Define edges
     workflow.add_edge(START, "planner")
