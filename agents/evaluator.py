@@ -2,6 +2,17 @@
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.tools import StructuredTool
 from core.cost_eval import UtilityEvaluator
+from core.workflow import Workflow
+
+
+def utility_wrapper(workflow_data: dict, placement: list[int], params: dict) -> float:
+    """
+    JSON-friendly wrapper for the UtilityEvaluator.
+    Converts workflow_data dict -> Workflow object.
+    """
+    workflow = Workflow.from_dict(workflow_data)
+    evaluator = UtilityEvaluator()
+    return evaluator.total_offloading_cost(workflow, placement, params)
 
 
 class EvaluatorAgent:
@@ -9,13 +20,13 @@ class EvaluatorAgent:
 
     def __init__(self, api_key: str):
         self.utility_tool = StructuredTool.from_function(
-            func=UtilityEvaluator().total_offloading_cost,
+            func=utility_wrapper,
             name="utility_evaluator",
             description="Computes utility metrics (latency, cost, and energy consumption) for a given offloading plan."
         )
 
         self.llm = ChatGoogleGenerativeAI(
-            model="gemini-1.5-flash",
+            model="models/gemini-2.5-flash",
             google_api_key=api_key,
             temperature=0.4,
         ).bind_tools([self.utility_tool])
@@ -38,3 +49,9 @@ class EvaluatorAgent:
 
         response = self.llm.invoke(prompt)
         return response.content
+    
+    def run(self, state: dict):
+        plan = state.get("plan")
+        environment = state.get("env", {})
+        evaluation = self.evaluate_plan(plan, environment)
+        return {"plan": plan, "evaluation": evaluation}

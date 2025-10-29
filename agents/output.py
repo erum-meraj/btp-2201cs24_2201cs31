@@ -24,3 +24,8 @@ class OutputAgent(BaseAgent):
         """
 
         return self.think(prompt)
+    def run(self, state: dict):
+        plan = state.get("plan", "")
+        evaluation = state.get("evaluation", "")
+        output = self.format_output(plan, evaluation)
+        return {"plan": plan, "evaluation": evaluation, "output": output}

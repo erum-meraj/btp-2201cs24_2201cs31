@@ -35,3 +35,8 @@ class PlannerAgent(BaseAgent):
     def create_plan(self, context: dict):
         prompt = self.prompt_template.format(context=context)
         return self.think(prompt)
+
+    def run(self, state: dict):
+        context = state.get("env") or {}
+        plan = self.create_plan(context)
+        return {"plan": plan, "query": state.get("query")}
