@@ -85,6 +85,10 @@ if __name__ == "__main__":
     network.add_node(Node(1, 'cloud', compute_power=50e9, energy_coeff=0.2))
     network.add_link(0, 1, bandwidth=10e6, delay=0.01)
     network.add_link(1, 0, bandwidth=10e6, delay=0.01)
+    # Add self-links to allow local processing (important!)
+    network.add_link(0, 0, bandwidth=10e6, delay=0.0)
+    network.add_link(1, 1, bandwidth=10e6, delay=0.0)
+
 
     # Step 2: Create environment
     env = Environment(network)
