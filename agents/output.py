@@ -2,11 +2,11 @@
 from agents.base_agent import BaseAgent
 
 class OutputAgent(BaseAgent):
-    """Formats final structured output."""
+    """Formats final output with optimal policy."""
 
-    def format_output(self, plan: str, evaluation: str):
+    def format_output(self, plan: str, evaluation: str, optimal_policy):
         prompt = f"""
-        You are the Output Agent. Structure the final output into a JSON-like schema.
+        You are the Output Agent. Provide the final output strictly following the research paper format.
 
         Plan Summary:
         {plan}
@@ -14,18 +14,22 @@ class OutputAgent(BaseAgent):
         Evaluation Summary:
         {evaluation}
 
-        Output Format:
+        The optimal offloading policy vector (p) should be expressed as:
+        p = {{{', '.join(map(str, optimal_policy))}}}
+
+        Return JSON with:
         {{
           "plan_summary": "...",
           "evaluation_summary": "...",
-          "recommended_policy": "...",
-          "confidence": "..."
+          "recommended_policy": "{list(optimal_policy)}",
+          "confidence": "High"
         }}
         """
-
         return self.think(prompt)
+
     def run(self, state: dict):
         plan = state.get("plan", "")
         evaluation = state.get("evaluation", "")
-        output = self.format_output(plan, evaluation)
+        optimal_policy = state.get("optimal_policy", [])
+        output = self.format_output(plan, evaluation, optimal_policy)
         return {"plan": plan, "evaluation": evaluation, "output": output}

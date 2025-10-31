@@ -37,6 +37,19 @@ class PlannerAgent(BaseAgent):
         return self.think(prompt)
 
     def run(self, state: dict):
+        """
+        The PlannerAgent generates a plan based on the environment,
+        but it must also pass through all other context (env, workflow, params)
+        to downstream agents like the EvaluatorAgent.
+        """
         context = state.get("env") or {}
         plan = self.create_plan(context)
-        return {"plan": plan, "query": state.get("query")}
+
+        # ✅ Preserve all keys for downstream agents
+        new_state = dict(state)
+        new_state["plan"] = plan
+
+        print("DEBUG (Planner): Forwarding keys =>", list(new_state.keys()))
+        return new_state
+
+

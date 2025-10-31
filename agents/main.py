@@ -4,6 +4,7 @@ from agents.planner import PlannerAgent
 from agents.evaluator import EvaluatorAgent
 from agents.output import OutputAgent
 from typing import TypedDict, Optional
+from core.workflow import Workflow, Task
 
 # Load environment variables
 dotenv.load_dotenv()
@@ -16,9 +17,12 @@ GEMINI_API_KEY = os.getenv("GOOGLE_API_KEY")
 class AgenticState(TypedDict, total=False):
     query: str
     env: dict
+    workflow: dict          # ✅ Add this
+    params: Optional[dict]  # ✅ Add this
     plan: Optional[str]
     evaluation: Optional[str]
-    output: Optional[dict]  # expecting a structured JSON output
+    output: Optional[dict]
+
 
 
 # -----------------------------
@@ -48,53 +52,89 @@ def build_agentic_workflow():
 # -----------------------------
 # Run the Workflow
 # -----------------------------
-def run_workflow(task_description: str, environment_state: dict):
+def run_workflow(task_description: str, state_data: dict):
+    """
+    state_data should include:
+      - env: environment parameters
+      - workflow: workflow dict (from Workflow.to_dict())
+      - params: optional evaluator parameters
+    """
     workflow = build_agentic_workflow()
     result = workflow.invoke({
         "query": task_description,
-        "env": environment_state
+        **state_data  
     })
 
     final_output = result.get("output", {})
-
-    # Save to Markdown
-    output_path = os.path.join(os.path.dirname(__file__), "result.md")
-    with open(output_path, "w", encoding="utf-8") as f:
-        f.write("# 🧠 Agentic Workflow Result\n\n")
-        f.write(f"**Task:** {task_description}\n\n")
-        f.write("## 🌍 Environment\n")
-        f.write(f"```json\n{json.dumps(environment_state, indent=2)}\n```\n\n")
-
-        f.write("## 🪄 Final Output (Structured JSON)\n")
-        f.write(f"```json\n{json.dumps(final_output, indent=2)}\n```\n\n")
-
-        # If JSON contains specific keys, show readable summary
-        if isinstance(final_output, dict):
-            plan = final_output.get("plan_summary", "")
-            evaluation = final_output.get("evaluation_summary", "")
-            policy = final_output.get("recommended_policy", "")
-            confidence = final_output.get("confidence", "")
-
-            if plan:
-                f.write("## 🧩 Plan Summary\n")
-                f.write(plan + "\n\n")
-            if evaluation:
-                f.write("## 📊 Evaluation Summary\n")
-                f.write(evaluation + "\n\n")
-            if policy:
-                f.write("## ✅ Recommended Policy\n")
-                f.write(policy + "\n\n")
-            if confidence:
-                f.write(f"**Confidence Level:** {confidence}\n")
-
-    print(f"✅ Result saved to {output_path}")
+    ...
     return result
+
+# def run_workflow(task_description: str, environment_state: dict):
+#     workflow = build_agentic_workflow()
+#     result = workflow.invoke({
+#         "query": task_description,
+#         "env": environment_state
+#     })
+
+#     final_output = result.get("output", {})
+
+#     # Save to Markdown
+#     output_path = os.path.join(os.path.dirname(__file__), "result.md")
+#     with open(output_path, "w", encoding="utf-8") as f:
+#         f.write("# 🧠 Agentic Workflow Result\n\n")
+#         f.write(f"**Task:** {task_description}\n\n")
+#         f.write("## 🌍 Environment\n")
+#         f.write(f"```json\n{json.dumps(environment_state, indent=2)}\n```\n\n")
+
+#         f.write("## 🪄 Final Output (Structured JSON)\n")
+#         f.write(f"```json\n{json.dumps(final_output, indent=2)}\n```\n\n")
+
+#         # If JSON contains specific keys, show readable summary
+#         if isinstance(final_output, dict):
+#             plan = final_output.get("plan_summary", "")
+#             evaluation = final_output.get("evaluation_summary", "")
+#             policy = final_output.get("recommended_policy", "")
+#             confidence = final_output.get("confidence", "")
+
+#             if plan:
+#                 f.write("## 🧩 Plan Summary\n")
+#                 f.write(plan + "\n\n")
+#             if evaluation:
+#                 f.write("## 📊 Evaluation Summary\n")
+#                 f.write(evaluation + "\n\n")
+#             if policy:
+#                 f.write("## ✅ Recommended Policy\n")
+#                 f.write(policy + "\n\n")
+#             if confidence:
+#                 f.write(f"**Confidence Level:** {confidence}\n")
+
+#     print(f"✅ Result saved to {output_path}")
+#     return result
 
 
 # -----------------------------
 # Entry Point
 # -----------------------------
+
 if __name__ == "__main__":
-    env_state = {"bandwidth": 50, "cpu_load": 0.7, "latency": 30}
-    result = run_workflow("Optimize multi-task offloading policy.", env_state)
+    env_state = {
+        "DE": {0: 0.001, 1: 0.0005},
+        "VR": {0: 1e-9, 1: 5e-10},
+        "VE": {0: 0.0001, 1: 0.00005},
+        "DR_pair": {(0, 1): 2e-7, (1, 0): 2e-7}
+    }
+
+    # Example 3-task workflow
+    tasks = [
+        Task(0, size=5.0, dependencies={}),
+        Task(1, size=10.0, dependencies={0: 2.0}),
+        Task(2, size=8.0, dependencies={1: 1.0})
+    ]
+    wf = Workflow(tasks)
+
+    result = run_workflow("Find optimal offloading policy", {
+        "env": env_state,
+        "workflow": wf.to_dict(),
+        "params": {"CT": 0.2, "CE": 1.34, "delta_t": 1, "delta_e": 1}
+    })
     print(json.dumps(result.get("output", {}), indent=2))
