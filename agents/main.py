@@ -117,14 +117,23 @@ def run_workflow(task_description: str, state_data: dict):
 # -----------------------------
 
 if __name__ == "__main__":
-    env_state = {
-        "DE": {0: 0.001, 1: 0.0005},
-        "VR": {0: 1e-9, 1: 5e-10},
-        "VE": {0: 0.0001, 1: 0.00005},
-        "DR_pair": {(0, 1): 2e-7, (1, 0): 2e-7}
-    }
+    from core.network import Network, Node
+    from core.environment import Environment
+    from core.workflow import Workflow, Task
+    import json
 
-    # Example 3-task workflow
+    # Step 1: Build network
+    network = Network()
+    network.add_node(Node(0, 'edge', compute_power=10e9, energy_coeff=0.5))
+    network.add_node(Node(1, 'cloud', compute_power=50e9, energy_coeff=0.2))
+    network.add_link(0, 1, bandwidth=10e6, delay=0.01)
+    network.add_link(1, 0, bandwidth=10e6, delay=0.01)
+
+    # Step 2: Create environment
+    env = Environment(network)
+    env.randomize(seed=42)
+
+    # Step 3: Define a small workflow (example with 3 tasks)
     tasks = [
         Task(0, size=5.0, dependencies={}),
         Task(1, size=10.0, dependencies={0: 2.0}),
@@ -132,9 +141,11 @@ if __name__ == "__main__":
     ]
     wf = Workflow(tasks)
 
+    # Step 4: Pass workflow + environment to run_workflow
     result = run_workflow("Find optimal offloading policy", {
-        "env": env_state,
-        "workflow": wf.to_dict(),
+        "env": env.get_all_parameters(),
+        "workflow": wf.to_dict(),              # ✅ now included
         "params": {"CT": 0.2, "CE": 1.34, "delta_t": 1, "delta_e": 1}
     })
+
     print(json.dumps(result.get("output", {}), indent=2))
