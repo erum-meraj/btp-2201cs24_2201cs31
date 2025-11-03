@@ -1,75 +1,104 @@
 # agents/output_agent.py
 import json
-import re
 from agents.base_agent import BaseAgent
 
 class OutputAgent(BaseAgent):
-    """Formats final output with optimal policy."""
+    """Formats final output with Chain-of-Thought explanations."""
 
-    def format_output(self, plan: str, evaluation: str, optimal_policy):
-        # Convert policy to a clear string representation
+    def format_output(self, plan: str, evaluation: str, optimal_policy, workflow_data: dict = None):
+        """Generate comprehensive output with reasoning explanation."""
+        
         policy_str = str(optimal_policy) if optimal_policy else "[]"
         
+        # Build task mapping explanation
+        task_mapping = ""
+        if optimal_policy and workflow_data:
+            tasks = workflow_data.get('tasks', [])
+            task_mapping = "\n".join([
+                f"  Task {i}: {self._get_location_name(loc)} (location {loc})"
+                for i, loc in enumerate(optimal_policy)
+                if i < len(tasks)
+            ])
+        
         prompt = f"""
-        You are the Output Agent. Provide the final output strictly following the research paper format.
+You are the Output Agent providing final recommendations for task offloading.
 
-        Plan Summary:
-        {plan}
+## Planner's Analysis:
+{plan[:300]}...
 
-        Evaluation Summary:
-        {evaluation}
+## Evaluation Result:
+{evaluation}
 
-        The optimal offloading policy vector (p) is: {policy_str}
-        This means: Task 0 → Location {optimal_policy[0] if len(optimal_policy) > 0 else 'N/A'}
-                    Task 1 → Location {optimal_policy[1] if len(optimal_policy) > 1 else 'N/A'}
-                    Task 2 → Location {optimal_policy[2] if len(optimal_policy) > 2 else 'N/A'}
+## Optimal Policy Found:
+{policy_str}
 
-        Return ONLY a valid JSON object (no markdown formatting) with:
-        {{
-          "plan_summary": "Brief 2-3 sentence summary of the planning approach",
-          "evaluation_summary": "The evaluation result exactly as provided",
-          "recommended_policy": {policy_str},
-          "confidence": "High" or "Low" based on whether a policy was found
-        }}
-        """
+## Task-to-Location Mapping:
+{task_mapping if task_mapping else "No valid policy found"}
+
+Using Chain-of-Thought reasoning, explain:
+
+1. **Why is this policy optimal?**
+   - What makes this placement better than alternatives?
+   - How does it balance competing objectives?
+
+2. **What are the key benefits?**
+   - Performance improvements
+   - Energy savings
+   - Cost reductions
+
+3. **What are potential risks or considerations?**
+   - Network dependencies
+   - Failure scenarios
+   - Resource availability
+
+4. **Implementation recommendations**
+   - Monitoring requirements
+   - Fallback strategies
+
+Provide your explanation in a clear, structured format.
+"""
         
-        response = self.think(prompt)
+        result = self.think_with_cot(prompt, return_reasoning=True)
         
-        # Try to extract JSON from the response (in case LLM wraps it in markdown)
-        try:
-            # Remove markdown code blocks if present
-            json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', response, re.DOTALL)
-            if json_match:
-                json_str = json_match.group(1)
-            else:
-                json_str = response
-            
-            # Parse the JSON
-            output = json.loads(json_str)
-            
-            # Ensure the policy is correct (override if LLM got it wrong)
-            output["recommended_policy"] = list(optimal_policy)
-            output["confidence"] = "High" if optimal_policy else "Low"
-            
-            return json.dumps(output, indent=2)
-            
-        except json.JSONDecodeError:
-            # Fallback: construct the output directly if LLM fails to generate valid JSON
-            output = {
-                "plan_summary": "Task offloading plan generated successfully",
-                "evaluation_summary": evaluation,
-                "recommended_policy": list(optimal_policy),
-                "confidence": "High" if optimal_policy else "Low"
-            }
-            return json.dumps(output, indent=2)
+        # Construct comprehensive output
+        output = {
+            "plan_summary": plan[:500] + ("..." if len(plan) > 500 else ""),
+            "evaluation_summary": evaluation,
+            "recommended_policy": list(optimal_policy),
+            "task_mapping": task_mapping,
+            "confidence": "High" if optimal_policy else "Low",
+            "reasoning": result['reasoning'],
+            "explanation": result['answer']
+        }
+        
+        return json.dumps(output, indent=2)
+
+    def _get_location_name(self, location: int) -> str:
+        """Convert location ID to human-readable name."""
+        if location == 0:
+            return "Local Device"
+        elif location == 1:
+            return "Edge Server"
+        else:
+            return f"Cloud Server {location-1}"
 
     def run(self, state: dict):
         plan = state.get("plan", "")
         evaluation = state.get("evaluation", "")
         optimal_policy = state.get("optimal_policy", [])
+        workflow_data = state.get("workflow", {})
         
-        # Debug: Print what we received
         print(f"DEBUG (OutputAgent): Received optimal_policy = {optimal_policy}")
         
-        output = self.format_output(plan, evaluation, optimal_policy)
-        return {"plan": plan, "evaluation": evaluation, "output": output}
+        output = self.format_output(plan, evaluation, optimal_policy, workflow_data)
+        
+        print("\n" + "="*60)
+        print("FINAL OUTPUT (with CoT explanation):")
+        print("="*60)
+        print(json.dumps(json.loads(output), indent=2))
+        print("="*60 + "\n")
+        
+        return {
+            **state,
+            "output": output
+        }

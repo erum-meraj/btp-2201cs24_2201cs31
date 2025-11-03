@@ -2,22 +2,21 @@ import itertools
 import math
 from core.workflow import Workflow
 from core.cost_eval import UtilityEvaluator
+from agents.base_agent import BaseAgent
+import json
 
-class EvaluatorAgent:
-    """Evaluator agent – computes utility and finds optimal offloading policy."""
 
-    def __init__(self, api_key: str):
+class EvaluatorAgent(BaseAgent):
+    """Evaluator agent with CoT-guided heuristic search."""
+
+    def __init__(self, api_key: str = None):
+        super().__init__(api_key)
         self.evaluator = UtilityEvaluator()
-        self.api_key = api_key
 
     def _normalize_env(self, environment: dict) -> dict:
-        """
-        Convert a user-provided environment dict into the keys expected by UtilityEvaluator.
-        Accept common variants: 'DR_pair' or 'DR', and ensure DE, VE, VR are present.
-        """
+        """Convert environment dict to expected format."""
         env = {}
 
-        # energy per byte (DE), energy per compute (VE), time per compute (VR)
         for k in ("DE", "VE", "VR"):
             if k in environment:
                 env[k] = environment[k]
@@ -26,7 +25,6 @@ class EvaluatorAgent:
             else:
                 env[k] = {}
 
-        # DR may be provided as 'DR', 'DR_pair' or inside nested 'DR'
         if "DR" in environment:
             env["DR"] = environment["DR"]
         elif "DR_pair" in environment:
@@ -34,21 +32,93 @@ class EvaluatorAgent:
         elif "dr_pair" in environment:
             env["DR"] = environment["dr_pair"]
         else:
-            # fallback: try to compute from network if provided, else empty dict
             env["DR"] = environment.get("DR_pair", {})
 
         return env
 
-    def find_best_policy(self, workflow_data: dict, environment: dict, params: dict):
-        """
-        Search over all possible placements (brute-force or sampled)
-        to find the placement vector p that minimizes total offloading cost U(w, p).
+    def get_llm_guided_heuristics(self, workflow_data: dict, environment: dict, plan: str):
+        """Use LLM with CoT to generate heuristic guidance for policy search."""
+        
+        workflow = Workflow.from_dict(workflow_data)
+        n_tasks = len(workflow.tasks)
+        
+        # Get location information
+        env = self._normalize_env(environment)
+        locs = set()
+        for d in (env.get("DE", {}), env.get("VE", {}), env.get("VR", {})):
+            locs.update(d.keys())
+        
+        prompt = f"""
+You are helping optimize task offloading decisions for an edge-cloud system.
 
-        Returns a dict:
-          { "best_policy": tuple or None,
-            "best_cost": float,
-            "skipped": int,
-            "evaluated": int }
+## Workflow Information:
+- Number of tasks: {n_tasks}
+- Task dependencies: {json.dumps({t.task_id: list(t.dependencies.keys()) for t in workflow.tasks}, indent=2)}
+- Task sizes: {json.dumps({t.task_id: t.size for t in workflow.tasks}, indent=2)}
+
+## Available Locations:
+{sorted(list(locs))}
+- Location 0: Local (IoT device)
+- Location 1+: Remote (Edge/Cloud servers)
+
+## Planner's Analysis:
+{plan[:500]}
+
+Based on the above information, suggest intelligent heuristics for task placement:
+
+1. Which tasks should definitely be offloaded (high compute, low data transfer)?
+2. Which tasks should stay local (low compute, high data dependency)?
+3. What placement patterns make sense given the DAG structure?
+4. Should we group dependent tasks on the same node?
+
+Provide 3-5 specific candidate placement policies to evaluate.
+Format: For each policy, list the location for each task [task0_loc, task1_loc, task2_loc, ...]
+"""
+        
+        result = self.think_with_cot(prompt, return_reasoning=True)
+        
+        print("\n" + "="*60)
+        print("LLM HEURISTIC REASONING:")
+        print("="*60)
+        print(result['reasoning'][:400] + "...")
+        print("="*60 + "\n")
+        
+        # Parse suggested policies from the answer
+        policies = self._parse_policies_from_text(result['answer'], n_tasks, len(locs))
+        
+        return policies
+
+    def _parse_policies_from_text(self, text: str, n_tasks: int, n_locations: int):
+        """Extract policy suggestions from LLM text output."""
+        import re
+        
+        policies = []
+        
+        # Look for patterns like [0, 1, 0] or (0, 1, 0)
+        pattern = r'[\[\(](\d+(?:\s*,\s*\d+)*)[\]\)]'
+        matches = re.findall(pattern, text)
+        
+        for match in matches:
+            try:
+                policy = [int(x.strip()) for x in match.split(',')]
+                if len(policy) == n_tasks and all(0 <= loc < n_locations for loc in policy):
+                    policies.append(tuple(policy))
+            except:
+                continue
+        
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_policies = []
+        for p in policies:
+            if p not in seen:
+                seen.add(p)
+                unique_policies.append(p)
+        
+        return unique_policies[:5]  # Return top 5 suggestions
+
+    def find_best_policy(self, workflow_data: dict, environment: dict, params: dict, plan: str = ""):
+        """
+        Search for optimal placement using CoT-guided heuristics + exhaustive search.
         """
         if workflow_data is None:
             raise ValueError("workflow_data is None")
@@ -57,53 +127,61 @@ class EvaluatorAgent:
         n_tasks = len(workflow.tasks)
 
         env = self._normalize_env(environment or {})
-        # number of locations is determined by DE keys, or VE or VR (take union)
+        
+        # Determine number of locations
         locs = set()
         for d in (env.get("DE", {}), env.get("VE", {}), env.get("VR", {})):
             locs.update(d.keys())
-        # fallback: if user supplied DR mapping, include its node ids
         for k in env.get("DR", {}).keys():
             try:
                 src, dst = k
-                locs.add(src); locs.add(dst)
+                locs.add(src)
+                locs.add(dst)
             except Exception:
                 pass
 
-        if len(locs) == 0:
-            # if no explicit nodes found, assume 2 locations (0 local and 1 remote) as default
-            n_locations = 2
-        else:
-            n_locations = max(locs) + 1  # assume 0..max_node_id
+        n_locations = max(locs) + 1 if locs else 2
 
-        # prepare params object expected by UtilityEvaluator.total_offloading_cost
-        # CRITICAL FIX: Use 'DR' as the key name (not 'DR_pair') to match cost_eval.py expectations
+        # Prepare evaluator params
         evaluator_params = {
             "DE": env.get("DE", {}),
             "VE": env.get("VE", {}),
             "VR": env.get("VR", {}),
             "DR": env.get("DR", {})
         }
-        # allow caller-provided overrides (params)
         if params:
             evaluator_params.update(params)
 
-        # iterate placements (brute-force); guard for explosion by limiting total combos
-        max_combinations = 5_000_000  # safety cap
-        total_combos = (n_locations ** n_tasks)
-        if total_combos > max_combinations:
-            # if too many, sample heuristically: try p0 (all local), p1 (all remote 1), and a few random
-            # but still try some deterministic candidates
-            candidates = []
-            candidates.append(tuple(0 for _ in range(n_tasks)))  # all local
-            if n_locations > 1:
-                candidates.append(tuple(1 for _ in range(n_tasks)))  # all remote 1
-            # try round-robin placements for some diversity
-            for start in range(min(n_locations, 4)):
+        # Get LLM-guided heuristic candidates
+        print("\n🤖 Using Chain-of-Thought to generate intelligent candidate policies...")
+        llm_candidates = self.get_llm_guided_heuristics(workflow_data, environment, plan)
+        
+        # Generate additional systematic candidates
+        systematic_candidates = []
+        systematic_candidates.append(tuple(0 for _ in range(n_tasks)))  # all local
+        if n_locations > 1:
+            systematic_candidates.append(tuple(1 for _ in range(n_tasks)))  # all remote
+            # Round-robin
+            for start in range(min(n_locations, 3)):
                 cand = tuple((start + i) % n_locations for i in range(n_tasks))
-                candidates.append(cand)
+                systematic_candidates.append(cand)
+        
+        # Combine candidates (LLM suggestions first, then systematic)
+        candidates = llm_candidates + [c for c in systematic_candidates if c not in llm_candidates]
+        
+        # If problem is small enough, also do exhaustive search
+        max_exhaustive = 10000
+        total_combos = n_locations ** n_tasks
+        if total_combos <= max_exhaustive:
+            print(f"✓ Problem size allows exhaustive search ({total_combos} combinations)")
+            all_candidates = list(itertools.product(range(n_locations), repeat=n_tasks))
+            candidates = list(set(candidates + all_candidates))
         else:
-            candidates = list(itertools.product(range(n_locations), repeat=n_tasks))
+            print(f"⚠ Problem too large for exhaustive search ({total_combos} combinations)")
+            print(f"  Using {len(candidates)} LLM-guided + heuristic candidates")
 
+        print(f"\n📊 Evaluating {len(candidates)} candidate policies...")
+        
         best_policy = None
         best_cost = float("inf")
         evaluated = 0
@@ -111,12 +189,9 @@ class EvaluatorAgent:
 
         for placement in candidates:
             try:
-                # UtilityEvaluator expects params dict with keys: DE, VE, VR, DR
                 cost = self.evaluator.total_offloading_cost(workflow, list(placement), evaluator_params)
-
                 evaluated += 1
 
-                # skip infinite costs (unreachable links)
                 if cost is None or (isinstance(cost, float) and math.isinf(cost)):
                     skipped += 1
                     continue
@@ -124,14 +199,12 @@ class EvaluatorAgent:
                 if cost < best_cost:
                     best_cost = cost
                     best_policy = tuple(placement)
+                    print(f"  ✓ New best: {best_policy} with cost {best_cost:.6f}")
 
             except KeyError as ke:
                 skipped += 1
-                # KeyError messages sometimes contain the missing key name (e.g., 'DR')
-                print(f"Skipped invalid policy {placement}: Missing key {ke}")
             except Exception as e:
                 skipped += 1
-                print(f"Skipped invalid policy {placement}: {e}")
 
         return {
             "best_policy": best_policy,
@@ -145,9 +218,10 @@ class EvaluatorAgent:
         environment = state.get("env", {})
         params = state.get("params", {})
         plan = state.get("plan", "")
+        
         print("DEBUG (Evaluator): Keys in state =>", list(state.keys()))
 
-        result = self.find_best_policy(workflow_data, environment, params) # type: ignore
+        result = self.find_best_policy(workflow_data, environment, params, plan)
 
         if result["best_policy"] is None:
             evaluation = f"No finite-cost policy found. evaluated={result['evaluated']}, skipped={result['skipped']}"
@@ -156,9 +230,7 @@ class EvaluatorAgent:
             evaluation = f"Best policy found with total cost = {result['best_cost']}"
             optimal_policy = list(result['best_policy'])
 
-        # Debug: Print what we're returning
-        print(f"DEBUG (Evaluator): Returning optimal_policy = {optimal_policy}")
-        print(f"DEBUG (Evaluator): Returning evaluation = {evaluation}")
+        print(f"\nDEBUG (Evaluator): Returning optimal_policy = {optimal_policy}")
 
         return {
             **state,
