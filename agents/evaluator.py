@@ -81,7 +81,7 @@ class EvaluatorAgent:
             "DE": env.get("DE", {}),
             "VE": env.get("VE", {}),
             "VR": env.get("VR", {}),
-            "DR": env.get("DR", {})  # ✅ Changed from DR_pair to DR
+            "DR": env.get("DR", {})
         }
         # allow caller-provided overrides (params)
         if params:
@@ -128,10 +128,10 @@ class EvaluatorAgent:
             except KeyError as ke:
                 skipped += 1
                 # KeyError messages sometimes contain the missing key name (e.g., 'DR')
-                print(f"⚠️ Skipped invalid policy {placement}: Missing key {ke}")
+                print(f"Skipped invalid policy {placement}: Missing key {ke}")
             except Exception as e:
                 skipped += 1
-                print(f"⚠️ Skipped invalid policy {placement}: {e}")
+                print(f"Skipped invalid policy {placement}: {e}")
 
         return {
             "best_policy": best_policy,
@@ -147,7 +147,7 @@ class EvaluatorAgent:
         plan = state.get("plan", "")
         print("DEBUG (Evaluator): Keys in state =>", list(state.keys()))
 
-        result = self.find_best_policy(workflow_data, environment, params)
+        result = self.find_best_policy(workflow_data, environment, params) # type: ignore
 
         if result["best_policy"] is None:
             evaluation = f"No finite-cost policy found. evaluated={result['evaluated']}, skipped={result['skipped']}"
@@ -160,9 +160,8 @@ class EvaluatorAgent:
         print(f"DEBUG (Evaluator): Returning optimal_policy = {optimal_policy}")
         print(f"DEBUG (Evaluator): Returning evaluation = {evaluation}")
 
-        # ✅ CRITICAL: Return new state that preserves all existing keys
         return {
-            **state,  # Preserve all existing state
+            **state,
             "evaluation": evaluation,
             "optimal_policy": optimal_policy
         }
