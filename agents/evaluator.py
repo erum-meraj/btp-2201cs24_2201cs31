@@ -9,7 +9,7 @@ import json
 class EvaluatorAgent(BaseAgent):
     """Evaluator agent with CoT-guided heuristic search."""
 
-    def __init__(self, api_key: str = None):
+    def __init__(self, api_key: str ):
         super().__init__(api_key)
         self.evaluator = UtilityEvaluator()
 
@@ -41,8 +41,7 @@ class EvaluatorAgent(BaseAgent):
         
         workflow = Workflow.from_dict(workflow_data)
         n_tasks = len(workflow.tasks)
-        
-        # Get location information
+
         env = self._normalize_env(environment)
         locs = set()
         for d in (env.get("DE", {}), env.get("VE", {}), env.get("VR", {})):
@@ -80,11 +79,10 @@ Format: For each policy, list the location for each task [task0_loc, task1_loc, 
         print("\n" + "="*60)
         print("LLM HEURISTIC REASONING:")
         print("="*60)
-        print(result['reasoning'][:400] + "...")
+        print(result['reasoning'][:400] + "...") # type: ignore
         print("="*60 + "\n")
-        
-        # Parse suggested policies from the answer
-        policies = self._parse_policies_from_text(result['answer'], n_tasks, len(locs))
+
+        policies = self._parse_policies_from_text(result['answer'], n_tasks, len(locs)) # type: ignore
         
         return policies
 
@@ -93,8 +91,7 @@ Format: For each policy, list the location for each task [task0_loc, task1_loc, 
         import re
         
         policies = []
-        
-        # Look for patterns like [0, 1, 0] or (0, 1, 0)
+
         pattern = r'[\[\(](\d+(?:\s*,\s*\d+)*)[\]\)]'
         matches = re.findall(pattern, text)
         
@@ -105,8 +102,7 @@ Format: For each policy, list the location for each task [task0_loc, task1_loc, 
                     policies.append(tuple(policy))
             except:
                 continue
-        
-        # Remove duplicates while preserving order
+
         seen = set()
         unique_policies = []
         for p in policies:
@@ -127,8 +123,7 @@ Format: For each policy, list the location for each task [task0_loc, task1_loc, 
         n_tasks = len(workflow.tasks)
 
         env = self._normalize_env(environment or {})
-        
-        # Determine number of locations
+
         locs = set()
         for d in (env.get("DE", {}), env.get("VE", {}), env.get("VR", {})):
             locs.update(d.keys())
@@ -152,16 +147,14 @@ Format: For each policy, list the location for each task [task0_loc, task1_loc, 
         if params:
             evaluator_params.update(params)
 
-        # Get LLM-guided heuristic candidates
-        print("\n🤖 Using Chain-of-Thought to generate intelligent candidate policies...")
+        print("\nUsing Chain-of-Thought to generate intelligent candidate policies...")
         llm_candidates = self.get_llm_guided_heuristics(workflow_data, environment, plan)
         
         # Generate additional systematic candidates
         systematic_candidates = []
-        systematic_candidates.append(tuple(0 for _ in range(n_tasks)))  # all local
+        systematic_candidates.append(tuple(0 for _ in range(n_tasks)))
         if n_locations > 1:
-            systematic_candidates.append(tuple(1 for _ in range(n_tasks)))  # all remote
-            # Round-robin
+            systematic_candidates.append(tuple(1 for _ in range(n_tasks)))
             for start in range(min(n_locations, 3)):
                 cand = tuple((start + i) % n_locations for i in range(n_tasks))
                 systematic_candidates.append(cand)
@@ -173,14 +166,14 @@ Format: For each policy, list the location for each task [task0_loc, task1_loc, 
         max_exhaustive = 10000
         total_combos = n_locations ** n_tasks
         if total_combos <= max_exhaustive:
-            print(f"✓ Problem size allows exhaustive search ({total_combos} combinations)")
+            print(f"Problem size allows exhaustive search ({total_combos} combinations)")
             all_candidates = list(itertools.product(range(n_locations), repeat=n_tasks))
             candidates = list(set(candidates + all_candidates))
         else:
-            print(f"⚠ Problem too large for exhaustive search ({total_combos} combinations)")
+            print(f" Problem too large for exhaustive search ({total_combos} combinations)")
             print(f"  Using {len(candidates)} LLM-guided + heuristic candidates")
 
-        print(f"\n📊 Evaluating {len(candidates)} candidate policies...")
+        print(f"\nEvaluating {len(candidates)} candidate policies...")
         
         best_policy = None
         best_cost = float("inf")
@@ -220,6 +213,9 @@ Format: For each policy, list the location for each task [task0_loc, task1_loc, 
         plan = state.get("plan", "")
         
         print("DEBUG (Evaluator): Keys in state =>", list(state.keys()))
+
+        if not isinstance(workflow_data, dict):
+            raise ValueError("workflow_data must be a dictionary")
 
         result = self.find_best_policy(workflow_data, environment, params, plan)
 

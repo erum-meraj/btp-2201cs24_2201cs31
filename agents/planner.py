@@ -52,21 +52,25 @@ Provide a structured, detailed plan that will guide the evaluator agent.
 
     def create_plan(self, context: dict):
         """Create a detailed plan using Chain-of-Thought reasoning."""
-        # Extract key information from context
+
         env_summary = self._summarize_environment(context)
-        
         prompt = self.prompt_template.format(context=json.dumps(env_summary, indent=2))
         
         # Use CoT reasoning
         result = self.think_with_cot(prompt, return_reasoning=True)
-        
-        # Format the plan with reasoning visible
+        if isinstance(result, dict):
+            reasoning = result.get('reasoning', 'No reasoning provided')
+            answer = result.get('answer', 'No answer provided')
+        else:
+            reasoning = str(result)
+            answer = str(result)
+            
         plan = f"""
 ## Reasoning Process:
-{result['reasoning']}
+{reasoning}
 
 ## Execution Plan:
-{result['answer']}
+{answer}
 """
         return plan
 
@@ -113,12 +117,11 @@ Provide a structured, detailed plan that will guide the evaluator agent.
             }
         
         plan = self.create_plan(context)
-        
-        # Preserve all keys for downstream agents
+
         new_state = dict(state)
         new_state["plan"] = plan
 
-        print("DEBUG (Planner): Forwarding keys =>", list(new_state.keys()))
+        # print("DEBUG (Planner): Forwarding keys =>", list(new_state.keys()))
         print("\n" + "="*60)
         print("PLANNER OUTPUT (with CoT reasoning):")
         print("="*60)
