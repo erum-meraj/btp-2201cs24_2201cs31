@@ -4,9 +4,9 @@ from core.workflow import Workflow
 from core.cost_eval import UtilityEvaluator
 
 class EvaluatorAgent:
-    """Evaluator agent — computes utility and finds optimal offloading policy."""
+    """Evaluator agent – computes utility and finds optimal offloading policy."""
 
-    def __init__(self, api_key: str = None):
+    def __init__(self, api_key: str):
         self.evaluator = UtilityEvaluator()
         self.api_key = api_key
 
@@ -76,12 +76,12 @@ class EvaluatorAgent:
             n_locations = max(locs) + 1  # assume 0..max_node_id
 
         # prepare params object expected by UtilityEvaluator.total_offloading_cost
-        # Many implementations expect a dict like {"DE":..., "VE":..., "VR":..., "DR":...}
+        # CRITICAL FIX: Use 'DR' as the key name (not 'DR_pair') to match cost_eval.py expectations
         evaluator_params = {
             "DE": env.get("DE", {}),
             "VE": env.get("VE", {}),
             "VR": env.get("VR", {}),
-            "DR_pair": env.get("DR", {})  # keep both names if evaluator expects either
+            "DR": env.get("DR", {})  # ✅ Changed from DR_pair to DR
         }
         # allow caller-provided overrides (params)
         if params:
@@ -111,22 +111,8 @@ class EvaluatorAgent:
 
         for placement in candidates:
             try:
-                # UtilityEvaluator API: try common signatures.
-                # Some implementations expect (workflow, placement, DE, VE, DR_pair, VR) or (workflow, placement, params)
-                # We'll try the total_offloading_cost(workflow, placement, evaluator_params) call first.
-                cost = None
-                try:
-                    cost = self.evaluator.total_offloading_cost(workflow, placement, evaluator_params)
-                except TypeError:
-                    # fallback attempt: pass individual components if signature differs
-                    cost = self.evaluator.total_offloading_cost(
-                        workflow,
-                        list(placement),
-                        evaluator_params.get("DE", {}),
-                        evaluator_params.get("VE", {}),
-                        evaluator_params.get("DR_pair", {}),
-                        evaluator_params.get("VR", {})
-                    )
+                # UtilityEvaluator expects params dict with keys: DE, VE, VR, DR
+                cost = self.evaluator.total_offloading_cost(workflow, list(placement), evaluator_params)
 
                 evaluated += 1
 
@@ -142,7 +128,7 @@ class EvaluatorAgent:
             except KeyError as ke:
                 skipped += 1
                 # KeyError messages sometimes contain the missing key name (e.g., 'DR')
-                print(f"⚠️ Skipped invalid policy {placement}: {ke}")
+                print(f"⚠️ Skipped invalid policy {placement}: Missing key {ke}")
             except Exception as e:
                 skipped += 1
                 print(f"⚠️ Skipped invalid policy {placement}: {e}")
@@ -159,7 +145,7 @@ class EvaluatorAgent:
         environment = state.get("env", {})
         params = state.get("params", {})
         plan = state.get("plan", "")
-        print("DEBUG: Keys in state =>", list(state.keys()))
+        print("DEBUG (Evaluator): Keys in state =>", list(state.keys()))
 
         result = self.find_best_policy(workflow_data, environment, params)
 
@@ -170,8 +156,13 @@ class EvaluatorAgent:
             evaluation = f"Best policy found with total cost = {result['best_cost']}"
             optimal_policy = list(result['best_policy'])
 
+        # Debug: Print what we're returning
+        print(f"DEBUG (Evaluator): Returning optimal_policy = {optimal_policy}")
+        print(f"DEBUG (Evaluator): Returning evaluation = {evaluation}")
+
+        # ✅ CRITICAL: Return new state that preserves all existing keys
         return {
-            "plan": plan,
+            **state,  # Preserve all existing state
             "evaluation": evaluation,
             "optimal_policy": optimal_policy
         }

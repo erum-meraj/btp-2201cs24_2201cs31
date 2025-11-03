@@ -3,7 +3,7 @@ from langgraph.graph import StateGraph, END, START
 from agents.planner import PlannerAgent
 from agents.evaluator import EvaluatorAgent
 from agents.output import OutputAgent
-from typing import TypedDict, Optional
+from typing import TypedDict, Optional, List
 from core.workflow import Workflow, Task
 
 # Load environment variables
@@ -22,6 +22,7 @@ class AgenticState(TypedDict, total=False):
     plan: Optional[str]
     evaluation: Optional[str]
     output: Optional[dict]
+    optimal_policy: Optional[List[int]]
 
 
 
@@ -105,7 +106,7 @@ if __name__ == "__main__":
     # Step 4: Pass workflow + environment to run_workflow
     result = run_workflow("Find optimal offloading policy", {
         "env": env.get_all_parameters(),
-        "workflow": wf.to_dict(),              # ✅ now included
+        "workflow": wf.to_dict(),
         "params": {"CT": 0.2, "CE": 1.34, "delta_t": 1, "delta_e": 1}
     })
 
