@@ -3,14 +3,9 @@ import json
 from agents.base_agent import BaseAgent
 
 class OutputAgent(BaseAgent):
-    """Formats final output with Chain-of-Thought explanations."""
-
     def format_output(self, plan: str, evaluation: str, optimal_policy, workflow_data: dict = None):
-        """Generate comprehensive output with reasoning explanation."""
-        
         policy_str = str(optimal_policy) if optimal_policy else "[]"
         
-        # Build task mapping explanation
         task_mapping = ""
         if optimal_policy and workflow_data:
             tasks = workflow_data.get('tasks', [])

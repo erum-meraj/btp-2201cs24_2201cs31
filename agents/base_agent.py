@@ -1,4 +1,3 @@
-# agents/base_agent.py
 from langchain_google_genai import ChatGoogleGenerativeAI
 import json
 import re
@@ -51,7 +50,6 @@ Format your response as:
         response = self.llm.invoke(cot_prompt)
         content = response.content.strip()
         
-        # Extract reasoning and answer
         reasoning_match = re.search(r'<reasoning>(.*?)</reasoning>', content, re.DOTALL)
         answer_match = re.search(r'<answer>(.*?)</answer>', content, re.DOTALL)
         
@@ -105,5 +103,4 @@ Show your work and explain your reasoning clearly.
                     "answer": answer_match.group(1).strip()
                 })
         
-        # For simplicity, return the first response (in production, implement voting/consistency check)
         return responses[0] if responses else {"reasoning": "", "answer": ""}

@@ -6,14 +6,9 @@ from agents.output import OutputAgent
 from typing import TypedDict, Optional, List
 from core.workflow import Workflow, Task
 
-# Load environment variables
 dotenv.load_dotenv()
 GEMINI_API_KEY = os.getenv("GOOGLE_API_KEY")
 
-
-# -----------------------------
-# Agentic State Definition
-# -----------------------------
 class AgenticState(TypedDict, total=False):
     query: str
     env: dict
@@ -24,11 +19,6 @@ class AgenticState(TypedDict, total=False):
     output: Optional[dict]
     optimal_policy: Optional[List[int]]
 
-
-
-# -----------------------------
-# Build the Agentic Workflow
-# -----------------------------
 def build_agentic_workflow():
     workflow = StateGraph(AgenticState)
 
@@ -49,10 +39,6 @@ def build_agentic_workflow():
 
     return workflow.compile()
 
-
-# -----------------------------
-# Run the Workflow
-# -----------------------------
 def run_workflow(task_description: str, state_data: dict):
     """
     state_data should include:
@@ -70,32 +56,23 @@ def run_workflow(task_description: str, state_data: dict):
     ...
     return result
 
-# -----------------------------
-# Entry Point
-# -----------------------------
-
 if __name__ == "__main__":
     from core.network import Network, Node
     from core.environment import Environment
     from core.workflow import Workflow, Task
     import json
 
-    # Step 1: Build network
     network = Network()
     network.add_node(Node(0, 'edge', compute_power=10e9, energy_coeff=0.5))
     network.add_node(Node(1, 'cloud', compute_power=50e9, energy_coeff=0.2))
     network.add_link(0, 1, bandwidth=10e6, delay=0.01)
     network.add_link(1, 0, bandwidth=10e6, delay=0.01)
-    # Add self-links to allow local processing (important!)
     network.add_link(0, 0, bandwidth=10e6, delay=0.0)
     network.add_link(1, 1, bandwidth=10e6, delay=0.0)
 
-
-    # Step 2: Create environment
     env = Environment(network)
     env.randomize(seed=42)
 
-    # Step 3: Define a small workflow (example with 3 tasks)
     tasks = [
         Task(0, size=5.0, dependencies={}),
         Task(1, size=10.0, dependencies={0: 2.0}),
@@ -103,7 +80,6 @@ if __name__ == "__main__":
     ]
     wf = Workflow(tasks)
 
-    # Step 4: Pass workflow + environment to run_workflow
     result = run_workflow("Find optimal offloading policy", {
         "env": env.get_all_parameters(),
         "workflow": wf.to_dict(),
