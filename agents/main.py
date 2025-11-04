@@ -12,8 +12,8 @@ GEMINI_API_KEY = os.getenv("GOOGLE_API_KEY")
 class AgenticState(TypedDict, total=False):
     query: str
     env: dict
-    workflow: dict          # ✅ Add this
-    params: Optional[dict]  # ✅ Add this
+    workflow: dict          
+    params: Optional[dict]  
     plan: Optional[str]
     evaluation: Optional[str]
     output: Optional[dict]
@@ -22,14 +22,14 @@ class AgenticState(TypedDict, total=False):
 def build_agentic_workflow():
     workflow = StateGraph(AgenticState)
 
-    planner = PlannerAgent(GEMINI_API_KEY) # type: ignore
-    evaluator = EvaluatorAgent(GEMINI_API_KEY) # type: ignore
-    output = OutputAgent(GEMINI_API_KEY)  # type: ignore
+    planner = PlannerAgent(GEMINI_API_KEY) 
+    evaluator = EvaluatorAgent(GEMINI_API_KEY)
+    output = OutputAgent(GEMINI_API_KEY)
 
     # Add nodes
-    workflow.add_node("planner", planner.run) # type: ignore
-    workflow.add_node("evaluator", evaluator.run) # type: ignore
-    workflow.add_node("output", output.run) # type: ignore
+    workflow.add_node("planner", planner.run)
+    workflow.add_node("evaluator", evaluator.run)
+    workflow.add_node("output", output.run)
 
     # Define edges
     workflow.add_edge(START, "planner")
