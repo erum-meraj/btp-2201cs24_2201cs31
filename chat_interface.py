@@ -6,10 +6,10 @@ from core.environment import Environment
 from core.workflow import Workflow, Task
 
 st.set_page_config(page_title="Agentic Workflow Chat", layout="wide")
-st.title("🤖 Agentic Workflow Chat Interface")
+st.title("Agentic Workflow Chat Interface")
 
 # --- Sidebar setup ---
-st.sidebar.header("⚙️ Configuration")
+st.sidebar.header("Configuration")
 query = st.sidebar.text_input("Task Description", "Find optimal offloading policy")
 
 if st.sidebar.button("Run Agents"):
@@ -22,7 +22,7 @@ if "run_agents" in st.session_state and st.session_state["run_agents"]:
     st.session_state["run_agents"] = False
 
     with chat_container:
-        st.chat_message("system").markdown("### 🧩 Initializing Environment...")
+        st.chat_message("system").markdown("### Initializing Environment...")
 
         # Step 1: Build environment
         network = Network()
@@ -48,7 +48,7 @@ if "run_agents" in st.session_state and st.session_state["run_agents"]:
         st.chat_message("user").markdown(f"**User:** {query}")
 
         with st.chat_message("assistant"):
-            st.markdown("#### 🧠 Planner Agent is thinking...")
+            st.markdown("#### Planner Agent is thinking...")
             result = run_workflow(query, {
                 "env": env.get_all_parameters(),
                 "workflow": wf.to_dict(),
@@ -63,13 +63,13 @@ if "run_agents" in st.session_state and st.session_state["run_agents"]:
         explanation = output.get("explanation", "")
 
         # --- Display step-by-step messages ---
-        st.chat_message("assistant").markdown("### 🧩 **Planner Agent**")
+        st.chat_message("assistant").markdown("### **Planner Agent**")
         st.markdown(f"**Plan Summary:**\n\n```\n{plan[:800]}\n```")
 
-        st.chat_message("assistant").markdown("### ⚖️ **Evaluator Agent**")
+        st.chat_message("assistant").markdown("### **Evaluator Agent**")
         st.markdown(f"**Evaluation Summary:**\n\n```\n{evaluation}\n```")
 
-        st.chat_message("assistant").markdown("### 🏁 **Output Agent**")
+        st.chat_message("assistant").markdown("### **Output Agent**")
         st.markdown("#### Reasoning (Chain of Thought)")
         st.info(reasoning)
 
@@ -78,5 +78,5 @@ if "run_agents" in st.session_state and st.session_state["run_agents"]:
 
         # --- Final JSON output ---
         st.divider()
-        st.markdown("### 📜 Full Structured Output")
+        st.markdown("### Full Structured Output")
         st.json(output)
