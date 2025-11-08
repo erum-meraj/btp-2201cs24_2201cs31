@@ -1,3 +1,4 @@
+# agents/evaluator.py - UPDATED with logging and complete environment details
 import itertools
 import math
 from core.workflow import Workflow
@@ -9,9 +10,10 @@ import json
 class EvaluatorAgent(BaseAgent):
     """Evaluator agent with CoT-guided heuristic search."""
 
-    def __init__(self, api_key: str ):
+    def __init__(self, api_key: str, log_file: str = "agent_trace.txt"):
         super().__init__(api_key)
         self.evaluator = UtilityEvaluator()
+        self.log_file = log_file
 
     def _normalize_env(self, environment: dict) -> dict:
         """Convert environment dict to expected format."""
@@ -36,7 +38,38 @@ class EvaluatorAgent(BaseAgent):
 
         return env
 
-    def get_llm_guided_heuristics(self, workflow_data: dict, environment: dict, plan: str):
+    def _format_env_for_prompt(self, env: dict):
+        """Format environment details comprehensively for LLM."""
+        details = []
+        
+        # Network topology
+        dr = env.get('DR', {})
+        if dr:
+            details.append("Network Data Rates (bandwidth):")
+            for (src, dst), rate in sorted(dr.items()):
+                details.append(f"  Link ({src} → {dst}): {rate:.2e} bits/sec")
+        
+        # Energy coefficients
+        if env.get('DE'):
+            details.append("\nEnergy Coefficients per Location:")
+            for loc, coeff in sorted(env['DE'].items()):
+                details.append(f"  Location {loc}: {coeff:.4f} J/cycle")
+        
+        # Computation rates
+        if env.get('VR'):
+            details.append("\nComputation Rates per Location:")
+            for loc, rate in sorted(env['VR'].items()):
+                details.append(f"  Location {loc}: {rate:.2e} cycles/sec")
+        
+        # Transmission energy
+        if env.get('VE'):
+            details.append("\nTransmission Energy per Location:")
+            for loc, energy in sorted(env['VE'].items()):
+                details.append(f"  Location {loc}: {energy:.4e} J/bit")
+        
+        return "\n".join(details)
+
+    def get_llm_guided_heuristics(self, workflow_data: dict, environment: dict, plan: str, params: dict):
         """Use LLM with CoT to generate heuristic guidance for policy search."""
         
         workflow = Workflow.from_dict(workflow_data)
@@ -47,21 +80,36 @@ class EvaluatorAgent(BaseAgent):
         for d in (env.get("DE", {}), env.get("VE", {}), env.get("VR", {})):
             locs.update(d.keys())
         
+        env_details = self._format_env_for_prompt(env)
+        
+        # Build comprehensive task info
+        task_details = []
+        for task in workflow.tasks:
+            task_details.append(f"Task {task.task_id}:")
+            task_details.append(f"  Size: {task.size} MB")
+            task_details.append(f"  Dependencies: {dict(task.dependencies) if task.dependencies else 'None'}")
+        
         prompt = f"""
 You are helping optimize task offloading decisions for an edge-cloud system.
 
+## Complete Environment Details:
+{env_details}
+
 ## Workflow Information:
 - Number of tasks: {n_tasks}
-- Task dependencies: {json.dumps({t.task_id: list(t.dependencies.keys()) for t in workflow.tasks}, indent=2)}
-- Task sizes: {json.dumps({t.task_id: t.size for t in workflow.tasks}, indent=2)}
+
+{chr(10).join(task_details)}
 
 ## Available Locations:
 {sorted(list(locs))}
 - Location 0: Local (IoT device)
 - Location 1+: Remote (Edge/Cloud servers)
 
+## Optimization Parameters:
+{json.dumps(params, indent=2)}
+
 ## Planner's Analysis:
-{plan[:500]}
+{plan[:800]}
 
 Based on the above information, suggest intelligent heuristics for task placement:
 
@@ -74,15 +122,23 @@ Provide 3-5 specific candidate placement policies to evaluate.
 Format: For each policy, list the location for each task [task0_loc, task1_loc, task2_loc, ...]
 """
         
+        # Log the prompt
+        self._log_interaction("EVALUATOR", prompt, None, "PROMPT")
+        
         result = self.think_with_cot(prompt, return_reasoning=True)
+        
+        full_response = f"REASONING:\n{result['reasoning']}\n\nANSWER:\n{result['answer']}"
+        
+        # Log the response
+        self._log_interaction("EVALUATOR", None, full_response, "RESPONSE")
         
         print("\n" + "="*60)
         print("LLM HEURISTIC REASONING:")
         print("="*60)
-        print(result['reasoning'][:400] + "...") # type: ignore
+        print(result['reasoning'][:400] + "...")
         print("="*60 + "\n")
 
-        policies = self._parse_policies_from_text(result['answer'], n_tasks, len(locs)) # type: ignore
+        policies = self._parse_policies_from_text(result['answer'], n_tasks, len(locs))
         
         return policies
 
@@ -110,7 +166,23 @@ Format: For each policy, list the location for each task [task0_loc, task1_loc, 
                 seen.add(p)
                 unique_policies.append(p)
         
-        return unique_policies[:5]  # Return top 5 suggestions
+        return unique_policies[:5]
+
+    def _log_interaction(self, agent: str, prompt: str, response: str, msg_type: str):
+        """Log agent interactions to file."""
+        with open(self.log_file, 'a', encoding='utf-8') as f:
+            if msg_type == "PROMPT":
+                f.write("\n" + "="*80 + "\n")
+                f.write(f"{agent} AGENT - PROMPT\n")
+                f.write("="*80 + "\n")
+                f.write(prompt)
+                f.write("\n" + "="*80 + "\n\n")
+            elif msg_type == "RESPONSE":
+                f.write("\n" + "="*80 + "\n")
+                f.write(f"{agent} AGENT - RESPONSE\n")
+                f.write("="*80 + "\n")
+                f.write(response)
+                f.write("\n" + "="*80 + "\n\n")
 
     def find_best_policy(self, workflow_data: dict, environment: dict, params: dict, plan: str = ""):
         """
@@ -148,7 +220,7 @@ Format: For each policy, list the location for each task [task0_loc, task1_loc, 
             evaluator_params.update(params)
 
         print("\nUsing Chain-of-Thought to generate intelligent candidate policies...")
-        llm_candidates = self.get_llm_guided_heuristics(workflow_data, environment, plan)
+        llm_candidates = self.get_llm_guided_heuristics(workflow_data, environment, plan, params)
         
         # Generate additional systematic candidates
         systematic_candidates = []
@@ -159,7 +231,7 @@ Format: For each policy, list the location for each task [task0_loc, task1_loc, 
                 cand = tuple((start + i) % n_locations for i in range(n_tasks))
                 systematic_candidates.append(cand)
         
-        # Combine candidates (LLM suggestions first, then systematic)
+        # Combine candidates
         candidates = llm_candidates + [c for c in systematic_candidates if c not in llm_candidates]
         
         # If problem is small enough, also do exhaustive search
@@ -170,8 +242,8 @@ Format: For each policy, list the location for each task [task0_loc, task1_loc, 
             all_candidates = list(itertools.product(range(n_locations), repeat=n_tasks))
             candidates = list(set(candidates + all_candidates))
         else:
-            print(f" Problem too large for exhaustive search ({total_combos} combinations)")
-            print(f"  Using {len(candidates)} LLM-guided + heuristic candidates")
+            print(f"Problem too large for exhaustive search ({total_combos} combinations)")
+            print(f"Using {len(candidates)} LLM-guided + heuristic candidates")
 
         print(f"\nEvaluating {len(candidates)} candidate policies...")
         
@@ -194,9 +266,9 @@ Format: For each policy, list the location for each task [task0_loc, task1_loc, 
                     best_policy = tuple(placement)
                     print(f"  ✓ New best: {best_policy} with cost {best_cost:.6f}")
 
-            except KeyError as ke:
+            except KeyError:
                 skipped += 1
-            except Exception as e:
+            except Exception:
                 skipped += 1
 
         return {
@@ -211,8 +283,6 @@ Format: For each policy, list the location for each task [task0_loc, task1_loc, 
         environment = state.get("env", {})
         params = state.get("params", {})
         plan = state.get("plan", "")
-        
-        print("DEBUG (Evaluator): Keys in state =>", list(state.keys()))
 
         if not isinstance(workflow_data, dict):
             raise ValueError("workflow_data must be a dictionary")
@@ -225,8 +295,6 @@ Format: For each policy, list the location for each task [task0_loc, task1_loc, 
         else:
             evaluation = f"Best policy found with total cost = {result['best_cost']}"
             optimal_policy = list(result['best_policy'])
-
-        print(f"\nDEBUG (Evaluator): Returning optimal_policy = {optimal_policy}")
 
         return {
             **state,

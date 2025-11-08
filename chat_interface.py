@@ -46,9 +46,14 @@ if "run_agents" in st.session_state and st.session_state["run_agents"]:
 
         # Step 3: Run agentic workflow
         st.chat_message("user").markdown(f"**User:** {query}")
-
+        print(query, {
+                "env": env.get_all_parameters(),
+                "workflow": wf.to_dict(),
+                "params": {"CT": 0.2, "CE": 1.34, "delta_t": 1, "delta_e": 1}
+            })
         with st.chat_message("assistant"):
             st.markdown("#### Planner Agent is thinking...")
+            
             result = run_workflow(query, {
                 "env": env.get_all_parameters(),
                 "workflow": wf.to_dict(),
