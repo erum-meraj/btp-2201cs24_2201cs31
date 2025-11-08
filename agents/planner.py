@@ -62,7 +62,7 @@ Analyze this edge-cloud offloading scenario step-by-step following the paper's f
    - Which tasks justify cloud offloading despite higher latency?
    - Should dependent tasks be co-located to reduce data transfer?
 
-Provide a structured, detailed plan that will guide the evaluator agent in finding the optimal placement policy p = {l_1, l_2, ..., l_N}.
+Provide a structured, detailed plan that will guide the evaluator agent in finding the optimal placement policy p = [l_1, l_2, ..., l_N].
 """)
 
     def _format_env_details(self, env: dict):
