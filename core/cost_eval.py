@@ -1,9 +1,9 @@
 from __future__ import annotations
-from typing import Dict, List, Tuple
+from typing import Dict, List
 import math
 
 from core.workflow import Workflow
-from core.utils import topological_sort
+from core.environment import Environment
 
 
 class UtilityEvaluator:
@@ -12,137 +12,291 @@ class UtilityEvaluator:
     where:
       - E = CE * (ED + EV)
       - T = CT * Delta_max(delay-DAG)
+    
+    Based on the paper "Deep Meta Q-Learning Based Multi-Task Offloading 
+    in Edge-Cloud Systems" (Section III-C: Cost Model)
     """
 
     def __init__(self, CT: float = 0.2, CE: float = 1.34, delta_t: int = 1, delta_e: int = 1):
+        """
+        Args:
+            CT: Cost per unit of execution time (default: 0.2 = 1/Tt where Tt=5ms)
+            CE: Cost per unit of energy consumption (default: 1.34 = 1/Te where Te≈0.746mJ)
+            delta_t: Weight for time consumption cost (0 or 1)
+            delta_e: Weight for energy consumption cost (0 or 1)
+        """
         self.CT = CT
         self.CE = CE
         self.delta_t = delta_t
         self.delta_e = delta_e
 
-    # ---------------- energy computations ----------------
-    def compute_ED(self, workflow: Workflow, placement: List[int], DE: Dict[int, float]) -> float:
+    # ---------------- Energy Computations (Equation 3-5) ----------------
+    
+    def compute_ED(self, workflow: Workflow, placement: Dict[int, int], env: Environment) -> float:
         """
-        ED: total data communication energy cost = sum over tasks of
-            DE(li) * (sum_j dj,i + sum_k di,k)
-        We'll compute contribution per task i: DE(li) * total_bytes_transferred
+        Compute ED: total data communication energy cost (Equation 4)
+        
+        ED = sum_{i=1}^{N} [ DE(li) * (sum_{j in Ji} d_{j,i} + sum_{k in Ki} d_{i,k}) ]
+        
+        Args:
+            workflow: Workflow object containing tasks and dependencies
+            placement: Dict mapping task_id -> location_id
+            env: Environment object with DE function
+            
+        Returns:
+            Total data communication energy cost
         """
         ED = 0.0
-        # prepare reverse mapping: for task i, get sum incoming and outgoing data
-        n = len(workflow.tasks)
-        for i, task in enumerate(workflow.tasks):
+        
+        # Get parent and child relationships
+        Ji = workflow.Ji()  # parents of each node
+        D = workflow.D()    # all edges (i,j) -> d_{i,j}
+        
+        # Iterate over real tasks (1 to N)
+        for i in range(1, workflow.N + 1):
             li = placement[i]
-            # incoming from parents: sum of data sizes in task.dependencies (parents -> i)
-            incoming = sum(task.dependencies.values())
-            # outgoing to children: sum of data sizes where task is parent of other tasks
-            outgoing = 0.0
-            # iterate children by scanning tasks (could be optimized)
-            for child in workflow.tasks:
-                if i in child.dependencies:
-                    outgoing += child.dependencies[i]
+            
+            # Incoming data from parents: sum_{j in Ji} d_{j,i}
+            incoming = sum(D.get((j, i), 0.0) for j in Ji.get(i, []))
+            
+            # Outgoing data to children: sum_{k in Ki} d_{i,k}
+            outgoing = sum(D.get((i, k), 0.0) for k in workflow.Ki().get(i, []))
+            
             total_bytes = incoming + outgoing
-            ED += DE.get(li, 0.0) * total_bytes
+            ED += env.DE(li) * total_bytes
+        
         return ED
 
-    def compute_EV(self, workflow: Workflow, placement: List[int], VE: Dict[int, float]) -> float:
+    def compute_EV(self, workflow: Workflow, placement: Dict[int, int], env: Environment) -> float:
         """
-        EV: total execution energy = sum_i vi * VE(li)
+        Compute EV: total execution energy (Equation 5)
+        
+        EV = sum_{i=1}^{N} [ vi * VE(li) ]
+        
+        Args:
+            workflow: Workflow object containing tasks
+            placement: Dict mapping task_id -> location_id
+            env: Environment object with VE function
+            
+        Returns:
+            Total execution energy cost
         """
         EV = 0.0
-        for i, task in enumerate(workflow.tasks):
+        V = workflow.V()  # task sizes
+        
+        # Iterate over real tasks (1 to N)
+        for i in range(1, workflow.N + 1):
             li = placement[i]
-            EV += task.size * VE.get(li, 0.0)
+            EV += V[i] * env.VE(li)
+        
         return EV
 
-    def compute_energy_cost(self, workflow: Workflow, placement: List[int], DE: Dict[int, float], VE: Dict[int, float]) -> float:
-        ED = self.compute_ED(workflow, placement, DE)
-        EV = self.compute_EV(workflow, placement, VE)
+    def compute_energy_cost(self, workflow: Workflow, placement: Dict[int, int], env: Environment) -> float:
+        """
+        Compute total energy consumption cost (Equation 3)
+        
+        E = CE * (ED + EV)
+        
+        Args:
+            workflow: Workflow object
+            placement: Dict mapping task_id -> location_id
+            env: Environment object
+            
+        Returns:
+            Total energy consumption cost
+        """
+        ED = self.compute_ED(workflow, placement, env)
+        EV = self.compute_EV(workflow, placement, env)
         return self.CE * (ED + EV)
 
-    # ---------------- time computations ----------------
+    # ---------------- Time Computations (Equation 6-7) ----------------
+    
     def compute_delay_edge_weight(self, i: int, j: int, workflow: Workflow,
-                                  placement: List[int], DR_pair: Dict[Tuple[int, int], float],
-                                  VR: Dict[int, float]) -> float:
+                                  placement: Dict[int, int], env: Environment) -> float:
         """
-        DΔ(i, j) = di,j * DR(li, lj) + vi * VR(li)
-        where di,j is data from i -> j (task i produces data di,j consumed by j),
-        vi is the task size for task i, li = placement[i], lj = placement[j]
+        Compute edge weight for delay-DAG (Equation 6)
+        
+        DΔ(i, j) = d_{i,j} * DR(li, lj) + vi * VR(li)
+        
+        Args:
+            i: Parent task ID
+            j: Child task ID
+            workflow: Workflow object
+            placement: Dict mapping task_id -> location_id
+            env: Environment object
+            
+        Returns:
+            Delay edge weight from task i to task j
         """
-        di_j = 0.0
-        # find data size di,j if exists in child's (j) dependencies (parent->child stored in child)
-        child = workflow.tasks[j]
-        if i in child.dependencies:
-            di_j = child.dependencies[i]
+        D = workflow.D()
+        V = workflow.V()
+        
+        d_ij = D.get((i, j), 0.0)  # data dependency from i to j
         li = placement[i]
         lj = placement[j]
-        dr = DR_pair.get((li, lj), float('inf'))
-        vr = VR.get(li, 0.0)
+        
+        dr = env.DR(li, lj)
+        vr = env.VR(li)
+        
         if math.isinf(dr):
-            # unreachable -> very large penalty
             return float('inf')
-        return di_j * dr + workflow.tasks[i].size * vr
+        
+        return d_ij * dr + V[i] * vr
 
-    def compute_critical_path_delay(self, workflow: Workflow, placement: List[int],
-                                    DR_pair: Dict[Tuple[int, int], float], VR: Dict[int, float]) -> float:
+    def compute_critical_path_delay(self, workflow: Workflow, placement: Dict[int, int], 
+                                    env: Environment) -> float:
         """
-        Build a weighted DAG using DΔ(i,j) on edges and compute the longest path
-        from the entry node (assumed id=0) to the exit node (assumed last id).
-        We use topological order and a DP for longest path in DAG (works for DAGs).
-        If any edge is infinite (unreachable link), it will propagate to inf.
+        Compute Delta_max: the maximum delay (critical path) through the delay-DAG
+        
+        Uses topological sort and dynamic programming to find longest path in DAG
+        from entry node (0) to exit node (N+1).
+        
+        Args:
+            workflow: Workflow object
+            placement: Dict mapping task_id -> location_id
+            env: Environment object
+            
+        Returns:
+            Maximum delay (critical path length)
         """
-        adj = workflow.adjacency()
-        order = topological_sort(adj)
-        if order is None:
-            raise ValueError("Workflow must be a DAG (no cycles).")
-
-        # initialize distances to -inf except entry (0)
-        dist = {tid: float('-inf') for tid in adj.keys()}
-        entry = 0
-        exit_id = max(adj.keys())
-        dist[entry] = 0.0
-
+        # Get adjacency list and topological order
+        Ki = workflow.Ki()  # children of each node
+        vertices = workflow.vertices()
+        
+        # Topological sort using DFS
+        def topological_sort():
+            visited = set()
+            stack = []
+            
+            def dfs(v):
+                visited.add(v)
+                for u in Ki.get(v, []):
+                    if u not in visited:
+                        dfs(u)
+                stack.append(v)
+            
+            for v in vertices:
+                if v not in visited:
+                    dfs(v)
+            
+            return stack[::-1]
+        
+        order = topological_sort()
+        
+        # Initialize distances
+        dist = {v: float('-inf') for v in vertices}
+        dist[0] = 0.0  # Entry node
+        
+        # DP for longest path
         for u in order:
             if dist[u] == float('-inf'):
-                # unreachable so skip
                 continue
-            children = adj.get(u, [])
-            for v in children:
-                w_uv = self.compute_delay_edge_weight(u, v, workflow, placement, DR_pair, VR)
+            
+            for v in Ki.get(u, []):
+                # Compute edge weight using placement
+                if u == 0:
+                    # Entry node: only task execution time at destination
+                    w_uv = 0.0  # Entry node has no computation
+                elif v == workflow.N + 1:
+                    # Exit node: only include task u execution and data transfer
+                    w_uv = self.compute_delay_edge_weight(u, v, workflow, placement, env)
+                else:
+                    # Regular edge
+                    w_uv = self.compute_delay_edge_weight(u, v, workflow, placement, env)
+                
                 if math.isinf(w_uv):
                     dist[v] = float('inf')
                 else:
-                    if dist[u] + w_uv > dist[v]:
-                        dist[v] = dist[u] + w_uv
-                # if propagation of inf already happened, it remains
-                if math.isinf(dist[v]):
-                    # once infinite, stays infinite
-                    pass
+                    dist[v] = max(dist[v], dist[u] + w_uv)
+        
+        return dist[workflow.N + 1]
 
-        return dist[exit_id]
-
-    def compute_time_cost(self, workflow: Workflow, placement: List[int], DR_pair: Dict[Tuple[int, int], float], VR: Dict[int, float]) -> float:
-        delta_max = self.compute_critical_path_delay(workflow, placement, DR_pair, VR)
+    def compute_time_cost(self, workflow: Workflow, placement: Dict[int, int], env: Environment) -> float:
+        """
+        Compute total time consumption cost (Equation 7)
+        
+        T = CT * Delta_max(w_Δ)
+        
+        Args:
+            workflow: Workflow object
+            placement: Dict mapping task_id -> location_id
+            env: Environment object
+            
+        Returns:
+            Total time consumption cost
+        """
+        delta_max = self.compute_critical_path_delay(workflow, placement, env)
         if math.isinf(delta_max):
             return float('inf')
         return self.CT * delta_max
 
-    # ---------------- total ----------------
-    def total_offloading_cost(self, workflow: Workflow, placement: List[int], params: Dict) -> float:
+    # ---------------- Total Offloading Cost (Equation 8) ----------------
+    
+    def total_offloading_cost(self, workflow: Workflow, placement: Dict[int, int], 
+                            env: Environment) -> float:
         """
-        params: dict with keys 'DR', 'DE', 'VR', 'VE' where:
-          - DR is dict mapping (li,lj) -> seconds/byte
-          - DE is dict mapping li -> energy/byte
-          - VR is dict mapping li -> seconds/cycle
-          - VE is dict mapping li -> energy/cycle
+        Compute total offloading cost (Equation 8)
+        
+        U(w, p) = delta_t * T + delta_e * E
+        
+        where:
+        - T = CT * Delta_max(delay-DAG)
+        - E = CE * (ED + EV)
+        
+        Args:
+            workflow: Workflow object
+            placement: Dict mapping task_id -> location_id (1 to N)
+            env: Environment object
+            
+        Returns:
+            Total offloading cost
         """
-        DR_pair = params['DR']
-        DE = params['DE']
-        VR = params['VR']
-        VE = params['VE']
-
-        energy = self.compute_energy_cost(workflow, placement, DE, VE)
-        time_cost = self.compute_time_cost(workflow, placement, DR_pair, VR)
-        # if any component infinite, return inf
+        # Add entry (0) and exit (N+1) to placement (both at IoT device)
+        full_placement = {0: 0, workflow.N + 1: 0}
+        full_placement.update(placement)
+        
+        # Compute energy and time costs
+        energy = self.compute_energy_cost(workflow, full_placement, env)
+        time_cost = self.compute_time_cost(workflow, full_placement, env)
+        
+        # Check for infinite costs
         if math.isinf(energy) or math.isinf(time_cost):
             return float('inf')
+        
+        # Apply mode weights (delta_t, delta_e)
         return self.delta_t * time_cost + self.delta_e * energy
+    
+    def evaluate(self, workflow: Workflow, placement: Dict[int, int], 
+                env: Environment) -> Dict[str, float]:
+        """
+        Evaluate and return detailed cost breakdown
+        
+        Args:
+            workflow: Workflow object
+            placement: Dict mapping task_id -> location_id
+            env: Environment object
+            
+        Returns:
+            Dict with 'total', 'energy', 'time', 'ED', 'EV' costs
+        """
+        # Add entry and exit to placement
+        full_placement = {0: 0, workflow.N + 1: 0}
+        full_placement.update(placement)
+        
+        ED = self.compute_ED(workflow, full_placement, env)
+        EV = self.compute_EV(workflow, full_placement, env)
+        energy = self.CE * (ED + EV)
+        
+        delta_max = self.compute_critical_path_delay(workflow, full_placement, env)
+        time_cost = self.CT * delta_max
+        
+        total = self.delta_t * time_cost + self.delta_e * energy
+        
+        return {
+            'total': total,
+            'energy': energy,
+            'time': time_cost,
+            'ED': ED,
+            'EV': EV,
+            'delta_max': delta_max
+        }

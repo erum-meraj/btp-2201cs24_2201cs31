@@ -1,4 +1,4 @@
-# agents/planner.py - UPDATED with logging and complete environment details
+# agents/planner.py - FULLY ALIGNED with research paper specifications
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import PromptTemplate
 from agents.base_agent import BaseAgent
@@ -17,93 +17,142 @@ You are the Planner Agent in a multi-agent system for task offloading optimizati
 
 Your job is to analyze the task offloading problem and create a comprehensive plan using Chain-of-Thought reasoning.
 
-## Complete Environment Details:
+## Environment Configuration (Section III-A of the paper):
 {env_details}
 
-## Workflow Structure:
+## Workflow Structure (Section III-B - DAG-based Application Model):
 {workflow_details}
 
-## Optimization Parameters:
+## Cost Model Parameters (Section III-C):
 {params}
 
 ## Your Task:
-Analyze this edge-cloud offloading scenario step-by-step:
+Analyze this edge-cloud offloading scenario step-by-step following the paper's framework:
 
-1. **Environment Analysis**: What are the key characteristics of the environment?
-   - How many nodes/locations are available?
-   - What are the network characteristics (bandwidth, latency)?
-   - What are the energy/compute constraints?
+1. **Environment Analysis**: 
+   - Identify DR (Data Time Consumption - ms/byte) characteristics
+   - Assess DE (Data Energy Consumption - mJ/byte) at each location
+   - Evaluate VR (Task Time Consumption - ms/cycle) capabilities
+   - Review VE (Task Energy Consumption - mJ/cycle) profiles
+   - Count available edge servers (E) and cloud servers (C)
 
-2. **Workflow Analysis**: What does the task dependency structure tell us?
-   - How many tasks need to be scheduled?
-   - What are the critical paths in the DAG?
-   - Which tasks have high computational or data transfer requirements?
+2. **Workflow DAG Analysis**:
+   - Number of real tasks (N) excluding entry/exit nodes
+   - Task sizes (v_i in CPU cycles)
+   - Data dependencies (d_i,j in bytes)
+   - Critical path identification
+   - Parent set J_i and children set K_i for each task
 
-3. **Constraint Identification**: What are the key constraints and trade-offs?
-   - Energy vs. latency trade-offs
-   - Local execution vs. remote offloading
-   - Edge vs. cloud placement considerations
+3. **Cost Components (Equations 3-8)**:
+   - Energy Cost: E = CE * (ED + EV)
+     * ED from data communication (Eq. 4)
+     * EV from task execution (Eq. 5)
+   - Time Cost: T = CT * Delta_max (Eq. 7)
+     * Critical path through delay-DAG (Eq. 6)
+   - Total: U(w,p) = delta_t * T + delta_e * E (Eq. 8)
 
-4. **Strategy Formulation**: What approach should the evaluator take?
-   - Should we prioritize certain tasks for offloading?
-   - Which placement patterns are likely optimal?
-   - What heuristics can guide the search?
+4. **Mode-Specific Strategy**:
+   - Low Latency Mode (delta_t=1, delta_e=0): Minimize execution time
+   - Low Power Mode (delta_t=0, delta_e=1): Minimize energy consumption  
+   - Balanced Mode (delta_t=1, delta_e=1): Optimize both objectives
 
-5. **Optimization Goals**: What metrics matter most?
-   - Time minimization (low latency mode)
-   - Energy minimization (low power mode)
-   - Balanced optimization
+5. **Placement Strategy Recommendations**:
+   - Which tasks should remain local (l_i=0)?
+   - Which tasks benefit from edge offloading?
+   - Which tasks justify cloud offloading despite higher latency?
+   - Should dependent tasks be co-located to reduce data transfer?
 
-Provide a structured, detailed plan that will guide the evaluator agent.
+Provide a structured, detailed plan that will guide the evaluator agent in finding the optimal placement policy p = {l_1, l_2, ..., l_N}.
 """)
 
     def _format_env_details(self, env: dict):
-        """Format environment details for the prompt."""
+        """Format environment details following paper Section III-A."""
         details = []
         
-        # Network topology
-        dr = env.get('DR', env.get('DR_pair', {}))
+        # Extract location types
+        locations = env.get('locations', {})
+        if locations:
+            details.append("Available Locations (l):")
+            for loc_id, loc_type in sorted(locations.items()):
+                details.append(f"  l={loc_id}: {loc_type.upper()}")
+            details.append("")
+        
+        # DR: Data Time Consumption (ms/byte) - Paper Section III-A
+        dr = env.get('DR', {})
         if dr:
-            details.append("Network Data Rates (DR):")
+            details.append("DR(li, lj) - Data Time Consumption (ms/byte):")
+            details.append("  Time to move 1 byte of data between locations")
             for (src, dst), rate in sorted(dr.items()):
-                details.append(f"  Link ({src} → {dst}): {rate:.2e} bits/sec")
+                if src != dst:
+                    details.append(f"    DR({src}, {dst}) = {rate:.6e} ms/byte")
+            details.append("")
         
-        # Energy coefficients
-        if 'DE' in env:
-            details.append("\nEnergy Coefficients (DE):")
-            for loc, coeff in sorted(env['DE'].items()):
-                details.append(f"  Location {loc}: {coeff:.4f} J/cycle")
+        # DE: Data Energy Consumption (mJ/byte) - Paper Section III-A
+        de = env.get('DE', {})
+        if de:
+            details.append("DE(li) - Data Energy Consumption (mJ/byte):")
+            details.append("  Energy for processing 1 byte at location")
+            for loc, coeff in sorted(de.items()):
+                details.append(f"    DE({loc}) = {coeff:.6e} mJ/byte")
+            details.append("")
         
-        # Computation rates
-        if 'VR' in env:
-            details.append("\nComputation Rates (VR):")
-            for loc, rate in sorted(env['VR'].items()):
-                details.append(f"  Location {loc}: {rate:.2e} cycles/sec")
+        # VR: Task Time Consumption (ms/cycle) - Paper Section III-A
+        vr = env.get('VR', {})
+        if vr:
+            details.append("VR(li) - Task Time Consumption (ms/cycle):")
+            details.append("  Time to execute 1 CPU cycle at location")
+            for loc, rate in sorted(vr.items()):
+                details.append(f"    VR({loc}) = {rate:.6e} ms/cycle")
+            details.append("")
         
-        # Energy for transmission
-        if 'VE' in env:
-            details.append("\nTransmission Energy (VE):")
-            for loc, energy in sorted(env['VE'].items()):
-                details.append(f"  Location {loc}: {energy:.4e} J/bit")
+        # VE: Task Energy Consumption (mJ/cycle) - Paper Section III-A
+        ve = env.get('VE', {})
+        if ve:
+            details.append("VE(li) - Task Energy Consumption (mJ/cycle):")
+            details.append("  Energy per CPU cycle at location")
+            for loc, energy in sorted(ve.items()):
+                details.append(f"    VE({loc}) = {energy:.6e} mJ/cycle")
         
         return "\n".join(details)
     
     def _format_workflow_details(self, workflow: dict):
-        """Format workflow details for the prompt."""
-        tasks = workflow.get('tasks', [])
-        details = [f"Total Tasks: {len(tasks)}\n"]
+        """Format workflow details following paper Section III-B."""
+        tasks = workflow.get('tasks', {})
+        edges = workflow.get('edges', {})
+        N = workflow.get('N', 0)
         
-        for task in tasks:
-            task_id = task.get('task_id', '?')
-            size = task.get('size', 0)
-            deps = task.get('dependencies', {})
+        details = []
+        details.append("Workflow DAG: w = {V, D}")
+        details.append(f"  N = {N} (number of real tasks, excluding entry v_0 and exit v_{N+1})")
+        details.append("")
+        
+        # Format each task following paper notation
+        for task_id in sorted(tasks.keys()):
+            task_data = tasks[task_id]
+            v_i = task_data.get('v', 0)
             
             details.append(f"Task {task_id}:")
-            details.append(f"  Size: {size} MB")
-            if deps:
-                details.append(f"  Dependencies: {deps}")
+            details.append(f"  v_{task_id} = {v_i:.2e} CPU cycles")
+            
+            # Find J_i (parents) and K_i (children)
+            parents = [j for (j, k), _ in edges.items() if k == task_id]
+            children = [k for (j, k), _ in edges.items() if j == task_id]
+            
+            if parents:
+                details.append(f"  J_{task_id} (parents): {{{', '.join(map(str, parents))}}}")
             else:
-                details.append("  Dependencies: None")
+                details.append(f"  J_{task_id} (parents): ∅")
+            
+            if children:
+                details.append(f"  K_{task_id} (children): {{{', '.join(map(str, children))}}}")
+                details.append(f"  Data dependencies d_{{i,j}}:")
+                for k in children:
+                    d_ij = edges.get((task_id, k), 0)
+                    details.append(f"    d_{{{task_id},{k}}} = {d_ij:.2e} bytes")
+            else:
+                details.append(f"  K_{task_id} (children): ∅")
+            
+            details.append("")
         
         return "\n".join(details)
 
@@ -112,7 +161,30 @@ Provide a structured, detailed plan that will guide the evaluator agent.
         
         env_details = self._format_env_details(env)
         workflow_details = self._format_workflow_details(workflow)
-        params_str = json.dumps(params, indent=2)
+        
+        # Format parameters with paper context
+        params_formatted = [
+            "Cost Coefficients (Equations 1-2):",
+            f"  CT = {params.get('CT', 0.2)} (cost per unit time)",
+            f"  CE = {params.get('CE', 1.34)} (cost per unit energy)",
+            "",
+            "Mode Weights (Equation 8):",
+            f"  delta_t = {params.get('delta_t', 1)} (time weight)",
+            f"  delta_e = {params.get('delta_e', 1)} (energy weight)",
+            ""
+        ]
+        
+        # Add mode description
+        delta_t = params.get('delta_t', 1)
+        delta_e = params.get('delta_e', 1)
+        if delta_t == 1 and delta_e == 1:
+            params_formatted.append("  Mode: BALANCED (minimize both time and energy)")
+        elif delta_t == 1 and delta_e == 0:
+            params_formatted.append("  Mode: LOW LATENCY (minimize time only)")
+        elif delta_t == 0 and delta_e == 1:
+            params_formatted.append("  Mode: LOW POWER (minimize energy only)")
+        
+        params_str = "\n".join(params_formatted)
         
         prompt = self.prompt_template.format(
             env_details=env_details,
@@ -133,10 +205,10 @@ Provide a structured, detailed plan that will guide the evaluator agent.
             answer = str(result)
         
         full_response = f"""
-## Reasoning Process:
+## Chain-of-Thought Reasoning:
 {reasoning}
 
-## Execution Plan:
+## Strategic Plan for Evaluator:
 {answer}
 """
         

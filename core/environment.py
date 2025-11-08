@@ -1,106 +1,118 @@
+# agentic_offloading/core/network.py
 from __future__ import annotations
-from typing import Dict, Tuple, Optional
-import random
-import numpy as np
-from core.network import Network, Link
+from dataclasses import dataclass, field
+from typing import Dict, Tuple, Iterable
+
+
+@dataclass
+class Location:
+    """
+    Represents a compute/network location (l_i) as used in the paper.
+    l = 0 corresponds to the IoT device (mandatory).
+    type ∈ {'iot', 'edge', 'cloud'} is informational.
+    """
+    l: int
+    type: str  # 'iot' | 'edge' | 'cloud'
+    metadata: Dict = field(default_factory=dict)
 
 
 class Environment:
     """
-    Holds dynamic parameters for the edge-cloud environment:
-    - DR(li, lj): time per byte to move data between li and lj (seconds/byte)
-    - DE(li): energy per byte for data communication at location li (mJ/byte)
-    - VR(li): time per unit compute (seconds per CPU-cycle) at location li
-    - VE(li): energy per unit compute (mJ per CPU-cycle) at location li
+    Environment model exactly as in the paper (Section III-A):
+      - DR(li, lj): Data Time Consumption (ms/byte)
+      - DE(li):    Data Energy Consumption (mJ/byte)
+      - VR(li):    Task Time Consumption (ms/cycle)
+      - VE(li):    Task Energy Consumption (mJ/cycle)
 
-    The class supports:
-    - randomization (sample from ranges)
-    - setting parameters directly (useful for reproducible experiments)
-    - querying pairwise DR using network links if available
+    Notes:
+      • l = 0 denotes the IoT device; li=0 means no offloading (local).
+      • The network/compute model is defined by the four matrices {DR, DE, VR, VE}.
     """
-    def __init__(self, network: Network):
-        self.network = network
-        # By default store node-local params as dict node_id -> value
-        self.DE: Dict[int, float] = {}
-        self.VR: Dict[int, float] = {}
-        self.VE: Dict[int, float] = {}
-        # For DR (pairwise) we will compute from the network link if available
-        # or fall back to node-local "transfer speed" estimation
-        # Optionally a precomputed DR matrix can be set.
-        self.DR_pair: Dict[Tuple[int, int], float] = {}
+    def __init__(
+        self,
+        locations: Dict[int, Location],
+        DR_map: Dict[Tuple[int, int], float],
+        DE_map: Dict[int, float],
+        VR_map: Dict[int, float],
+        VE_map: Dict[int, float],
+    ) -> None:
+        self.locations = locations
+        self._DR = DR_map   # (li, lj) -> ms/byte
+        self._DE = DE_map   # li -> mJ/byte
+        self._VR = VR_map   # li -> ms/cycle
+        self._VE = VE_map   # li -> mJ/cycle
+        self._validate()
 
-    # ---------- initialization ----------
-    def randomize(self,
-                  dr_range: Tuple[float, float] = (1e-7, 5e-7),
-                  de_range: Tuple[float, float] = (1e-4, 1e-3),
-                  vr_range: Tuple[float, float] = (1e-9, 1e-8),
-                  ve_range: Tuple[float, float] = (1e-5, 1e-4),
-                  seed: Optional[int] = None) -> None:
+    # -------------------- Paper-defined functions --------------------
+
+    def DR(self, li: int, lj: int) -> float:
+        """Data Time Consumption: time to move one byte from li to lj (ms/byte)."""
+        if li == lj:
+            return 0.0
+        return self._DR.get((li, lj), float("inf"))
+
+    def DE(self, l: int) -> float:
+        """Data Energy Consumption at location l (mJ/byte)."""
+        return self._DE[l]
+
+    def VR(self, l: int) -> float:
+        """Task Time Consumption at location l (ms/cycle)."""
+        return self._VR[l]
+
+    def VE(self, l: int) -> float:
+        """Task Energy Consumption at location l (mJ/cycle)."""
+        return self._VE[l]
+
+    # -------------------- Helpers & validation --------------------
+
+    def edge_locations(self) -> Iterable[int]:
+        return (lid for lid, loc in self.locations.items() if loc.type == "edge")
+
+    def cloud_locations(self) -> Iterable[int]:
+        return (lid for lid, loc in self.locations.items() if loc.type == "cloud")
+
+    @property
+    def E(self) -> int:
+        """Number of edge servers (E)."""
+        return sum(1 for _ in self.edge_locations())
+
+    @property
+    def C(self) -> int:
+        """Number of cloud servers (C)."""
+        return sum(1 for _ in self.cloud_locations())
+
+    def _validate(self) -> None:
+        """Ensure IoT and parameter completeness."""
+        # Must have l=0 as IoT
+        if 0 not in self.locations or self.locations[0].type != "iot":
+            raise ValueError("Environment must contain l=0 of type 'iot' (IoT device).")
+        # Ensure all locations have DE, VR, VE defined
+        missing = [l for l in self.locations if l not in self._DE or l not in self._VR or l not in self._VE]
+        if missing:
+            raise ValueError(f"Missing DE/VR/VE entries for locations: {missing}")
+
+    # -------------------- Factory for experiments --------------------
+
+    @classmethod
+    def from_matrices(
+        cls,
+        types: Dict[int, str],
+        DR_matrix: Dict[Tuple[int, int], float],
+        DE_vector: Dict[int, float],
+        VR_vector: Dict[int, float],
+        VE_vector: Dict[int, float],
+    ) -> "Environment":
         """
-        Randomize environment parameters.
-        Units are intentionally general; typical usages:
-        - dr_range: seconds per byte (smaller = faster)
-        - de_range: mJ per byte
-        - vr_range: seconds per cpu-cycle (smaller = faster)
-        - ve_range: mJ per cpu-cycle
+        Build an Environment directly from {DR, DE, VR, VE} definitions.
+
+        All units should match the paper:
+          DR(ms/byte), DE(mJ/byte), VR(ms/cycle), VE(mJ/cycle)
         """
-        if seed is not None:
-            random.seed(seed)
-            np.random.seed(seed)
-
-        for node_id in self.network.nodes.keys():
-            self.DE[node_id] = float(random.uniform(*de_range))
-            self.VR[node_id] = float(random.uniform(*vr_range))
-            self.VE[node_id] = float(random.uniform(*ve_range))
-
-        # For pairwise DR, prefer to use existing links; otherwise fall back to
-        # sum of src/dst time_per_byte + link.delay-per-byte heuristic.
-        for src in self.network.nodes:
-            for dst in self.network.nodes:
-                if src == dst:
-                    self.DR_pair[(src, dst)] = 0.0
-                    continue
-                link = self.network.get_link(src, dst)
-                if link:
-                    # time per byte = link time_per_byte + fixed delay divided by a normalizing bytes
-                    self.DR_pair[(src, dst)] = link.time_per_byte() + (link.delay / 1e6)  # normalize delay/byte
-                else:
-                    # if no direct link, assume large transfer time to discourage that placement
-                    self.DR_pair[(src, dst)] = float('inf')
-
-    # ---------- setters / getters ----------
-    def set_DE(self, node_id: int, value: float) -> None:
-        self.DE[node_id] = value
-
-    def set_VR(self, node_id: int, value: float) -> None:
-        self.VR[node_id] = value
-
-    def set_VE(self, node_id: int, value: float) -> None:
-        self.VE[node_id] = value
-
-    def set_DR_pair(self, src: int, dst: int, dr_value: float) -> None:
-        self.DR_pair[(src, dst)] = dr_value
-
-    def get_DE(self, node_id: int) -> float:
-        return self.DE[node_id]
-
-    def get_VR(self, node_id: int) -> float:
-        return self.VR[node_id]
-
-    def get_VE(self, node_id: int) -> float:
-        return self.VE[node_id]
-
-    def get_DR(self, src: int, dst: int) -> float:
-        """
-        Return DR(src, dst) - time per byte to move between src and dst.
-        If there is no valid path / link, returns inf.
-        """
-        return self.DR_pair.get((src, dst), float('inf'))
-
-    def get_all_parameters(self) -> Dict:
-        return {
-            'DR': self.DR_pair,
-            'DE': self.DE,
-            'VR': self.VR,
-            'VE': self.VE
-        }
+        locations = {l: Location(l=l, type=types.get(l, "edge")) for l in types}
+        return cls(
+            locations=locations,
+            DR_map=DR_matrix,
+            DE_map=DE_vector,
+            VR_map=VR_vector,
+            VE_map=VE_vector,
+        )

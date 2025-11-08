@@ -1,125 +1,164 @@
-# agents/evaluator.py - UPDATED with logging and complete environment details
+# agents/evaluator.py - FULLY INTEGRATED with UtilityEvaluator and paper specifications
 import itertools
 import math
 from core.workflow import Workflow
+from core.environment import Environment
 from core.cost_eval import UtilityEvaluator
 from agents.base_agent import BaseAgent
 import json
 
 
 class EvaluatorAgent(BaseAgent):
-    """Evaluator agent with CoT-guided heuristic search."""
+    """Evaluator agent with CoT-guided heuristic search using UtilityEvaluator."""
 
     def __init__(self, api_key: str, log_file: str = "agent_trace.txt"):
         super().__init__(api_key)
-        self.evaluator = UtilityEvaluator()
         self.log_file = log_file
 
-    def _normalize_env(self, environment: dict) -> dict:
-        """Convert environment dict to expected format."""
-        env = {}
+    def _create_environment(self, env_dict: dict) -> Environment:
+        """Create Environment object from dictionary."""
+        locations_types = env_dict.get('locations', {})
+        DR_map = env_dict.get('DR', {})
+        DE_map = env_dict.get('DE', {})
+        VR_map = env_dict.get('VR', {})
+        VE_map = env_dict.get('VE', {})
+        
+        return Environment.from_matrices(
+            types=locations_types,
+            DR_matrix=DR_map,
+            DE_vector=DE_map,
+            VR_vector=VR_map,
+            VE_vector=VE_map
+        )
 
-        for k in ("DE", "VE", "VR"):
-            if k in environment:
-                env[k] = environment[k]
-            elif k.lower() in environment:
-                env[k] = environment[k.lower()]
-            else:
-                env[k] = {}
-
-        if "DR" in environment:
-            env["DR"] = environment["DR"]
-        elif "DR_pair" in environment:
-            env["DR"] = environment["DR_pair"]
-        elif "dr_pair" in environment:
-            env["DR"] = environment["dr_pair"]
-        else:
-            env["DR"] = environment.get("DR_pair", {})
-
-        return env
-
-    def _format_env_for_prompt(self, env: dict):
+    def _format_env_for_prompt(self, env_dict: dict):
         """Format environment details comprehensively for LLM."""
         details = []
         
-        # Network topology
-        dr = env.get('DR', {})
+        # Locations
+        locations = env_dict.get('locations', {})
+        if locations:
+            details.append("Available Locations:")
+            for loc_id, loc_type in sorted(locations.items()):
+                details.append(f"  Location {loc_id}: {loc_type.upper()} (l_{loc_id})")
+                if loc_id == 0:
+                    details.append(f"    → IoT device (local execution, no offloading)")
+                else:
+                    details.append(f"    → Remote server (offloading target)")
+            details.append("")
+        
+        # DR - Data Transfer Time
+        dr = env_dict.get('DR', {})
         if dr:
-            details.append("Network Data Rates (bandwidth):")
+            details.append("Data Transfer Characteristics DR(li, lj) [ms/byte]:")
             for (src, dst), rate in sorted(dr.items()):
-                details.append(f"  Link ({src} → {dst}): {rate:.2e} bits/sec")
+                if src != dst:
+                    latency_per_mb = rate * 1e6  # Convert to ms/MB
+                    details.append(f"  {src}→{dst}: {rate:.6e} ms/byte ({latency_per_mb:.3f} ms/MB)")
+            details.append("")
         
-        # Energy coefficients
-        if env.get('DE'):
-            details.append("\nEnergy Coefficients per Location:")
-            for loc, coeff in sorted(env['DE'].items()):
-                details.append(f"  Location {loc}: {coeff:.4f} J/cycle")
+        # DE - Data Energy
+        de = env_dict.get('DE', {})
+        if de:
+            details.append("Data Energy Consumption DE(li) [mJ/byte]:")
+            for loc, coeff in sorted(de.items()):
+                details.append(f"  Location {loc}: {coeff:.6e} mJ/byte")
+            details.append("")
         
-        # Computation rates
-        if env.get('VR'):
-            details.append("\nComputation Rates per Location:")
-            for loc, rate in sorted(env['VR'].items()):
-                details.append(f"  Location {loc}: {rate:.2e} cycles/sec")
+        # VR - Computation Speed
+        vr = env_dict.get('VR', {})
+        if vr:
+            details.append("Task Execution Speed VR(li) [ms/cycle]:")
+            for loc, rate in sorted(vr.items()):
+                # Convert to effective GHz for readability
+                ghz = 1.0 / (rate * 1e6) if rate > 0 else float('inf')
+                details.append(f"  Location {loc}: {rate:.6e} ms/cycle (≈{ghz:.1f} GHz)")
+            details.append("")
         
-        # Transmission energy
-        if env.get('VE'):
-            details.append("\nTransmission Energy per Location:")
-            for loc, energy in sorted(env['VE'].items()):
-                details.append(f"  Location {loc}: {energy:.4e} J/bit")
+        # VE - Task Energy
+        ve = env_dict.get('VE', {})
+        if ve:
+            details.append("Task Energy Consumption VE(li) [mJ/cycle]:")
+            for loc, energy in sorted(ve.items()):
+                details.append(f"  Location {loc}: {energy:.6e} mJ/cycle")
         
         return "\n".join(details)
 
-    def get_llm_guided_heuristics(self, workflow_data: dict, environment: dict, plan: str, params: dict):
+    def get_llm_guided_heuristics(self, workflow_dict: dict, env_dict: dict, plan: str, params: dict):
         """Use LLM with CoT to generate heuristic guidance for policy search."""
         
-        workflow = Workflow.from_dict(workflow_data)
-        n_tasks = len(workflow.tasks)
-
-        env = self._normalize_env(environment)
-        locs = set()
-        for d in (env.get("DE", {}), env.get("VE", {}), env.get("VR", {})):
-            locs.update(d.keys())
+        # Extract workflow details
+        tasks = workflow_dict.get('tasks', {})
+        edges = workflow_dict.get('edges', {})
+        N = workflow_dict.get('N', 0)
         
-        env_details = self._format_env_for_prompt(env)
+        # Get available locations
+        locations = env_dict.get('locations', {})
+        n_locations = len(locations)
         
-        # Build comprehensive task info
+        env_details = self._format_env_for_prompt(env_dict)
+        
+        # Build task details with paper notation
         task_details = []
-        for task in workflow.tasks:
-            task_details.append(f"Task {task.task_id}:")
-            task_details.append(f"  Size: {task.size} MB")
-            task_details.append(f"  Dependencies: {dict(task.dependencies) if task.dependencies else 'None'}")
+        for task_id in sorted(tasks.keys()):
+            task_data = tasks[task_id]
+            v_i = task_data.get('v', 0)
+            
+            # Find dependencies
+            parents = [j for (j, k), _ in edges.items() if k == task_id]
+            children_deps = [(k, edges[(task_id, k)]) for (j, k), _ in edges.items() if j == task_id]
+            
+            task_details.append(f"\nTask {task_id}:")
+            task_details.append(f"  v_{task_id} = {v_i:.2e} CPU cycles")
+            
+            if parents:
+                task_details.append(f"  Depends on: Tasks {parents}")
+            
+            if children_deps:
+                task_details.append(f"  Data output to:")
+                for k, d_ik in children_deps:
+                    task_details.append(f"    Task {k}: d_{{{task_id},{k}}} = {d_ik:.2e} bytes")
         
         prompt = f"""
-You are helping optimize task offloading decisions for an edge-cloud system.
+You are helping optimize task offloading decisions for an edge-cloud system following the paper's framework.
 
-## Complete Environment Details:
+## Environment Configuration:
 {env_details}
 
-## Workflow Information:
-- Number of tasks: {n_tasks}
-
+## Workflow DAG (N = {N} tasks):
 {chr(10).join(task_details)}
-
-## Available Locations:
-{sorted(list(locs))}
-- Location 0: Local (IoT device)
-- Location 1+: Remote (Edge/Cloud servers)
 
 ## Optimization Parameters:
 {json.dumps(params, indent=2)}
 
-## Planner's Analysis:
+## Planner's Strategic Analysis:
 {plan[:800]}
 
-Based on the above information, suggest intelligent heuristics for task placement:
+## Your Task:
+Generate 3-5 intelligent candidate placement policies p = {{l_1, l_2, ..., l_{N}}} where:
+- l_i = 0 means execute Task i locally on IoT device
+- l_i ≥ 1 means offload Task i to remote server l_i
 
-1. Which tasks should definitely be offloaded (high compute, low data transfer)?
-2. Which tasks should stay local (low compute, high data dependency)?
-3. What placement patterns make sense given the DAG structure?
-4. Should we group dependent tasks on the same node?
+Consider these heuristics from the paper:
 
-Provide 3-5 specific candidate placement policies to evaluate.
-Format: For each policy, list the location for each task [task0_loc, task1_loc, task2_loc, ...]
+1. **Computation-Heavy Tasks**: High v_i with low data dependencies → Good candidates for offloading
+   
+2. **Data-Heavy Tasks**: Low v_i but high d_{{i,j}} → May be better local to avoid transfer overhead
+
+3. **Dependent Task Co-location**: If d_{{i,j}} is large, placing Tasks i and j on same location reduces transfer
+
+4. **Critical Path Optimization**: Tasks on critical path should be placed on fastest available locations
+
+5. **Mode-Specific Strategy**:
+   - Low Latency: Prioritize fastest execution (VR), tolerate data transfer
+   - Low Power: Minimize energy (VE, DE), accept slower execution  
+   - Balanced: Find sweet spot between speed and energy
+
+Provide candidate policies as lists: [l_1, l_2, ..., l_{N}]
+
+Example format:
+- Policy 1: [0, 1, 1] - Task 1 local, Tasks 2-3 on Edge
+- Policy 2: [1, 2, 2] - Task 1 on Edge, Tasks 2-3 on Cloud
 """
         
         # Log the prompt
@@ -127,7 +166,7 @@ Format: For each policy, list the location for each task [task0_loc, task1_loc, 
         
         result = self.think_with_cot(prompt, return_reasoning=True)
         
-        full_response = f"REASONING:\n{result['reasoning']}\n\nANSWER:\n{result['answer']}"
+        full_response = f"REASONING:\n{result['reasoning']}\n\nCANDIDATE POLICIES:\n{result['answer']}"
         
         # Log the response
         self._log_interaction("EVALUATOR", None, full_response, "RESPONSE")
@@ -138,7 +177,7 @@ Format: For each policy, list the location for each task [task0_loc, task1_loc, 
         print(result['reasoning'][:400] + "...")
         print("="*60 + "\n")
 
-        policies = self._parse_policies_from_text(result['answer'], n_tasks, len(locs))
+        policies = self._parse_policies_from_text(result['answer'], N, n_locations)
         
         return policies
 
@@ -148,6 +187,7 @@ Format: For each policy, list the location for each task [task0_loc, task1_loc, 
         
         policies = []
 
+        # Match patterns like [0, 1, 2] or (0, 1, 2)
         pattern = r'[\[\(](\d+(?:\s*,\s*\d+)*)[\]\)]'
         matches = re.findall(pattern, text)
         
@@ -159,6 +199,7 @@ Format: For each policy, list the location for each task [task0_loc, task1_loc, 
             except:
                 continue
 
+        # Remove duplicates while preserving order
         seen = set()
         unique_policies = []
         for p in policies:
@@ -184,77 +225,90 @@ Format: For each policy, list the location for each task [task0_loc, task1_loc, 
                 f.write(response)
                 f.write("\n" + "="*80 + "\n\n")
 
-    def find_best_policy(self, workflow_data: dict, environment: dict, params: dict, plan: str = ""):
+    def find_best_policy(self, workflow_dict: dict, env_dict: dict, params: dict, plan: str = ""):
         """
         Search for optimal placement using CoT-guided heuristics + exhaustive search.
+        Uses UtilityEvaluator to compute offloading costs following the paper's equations.
         """
-        if workflow_data is None:
-            raise ValueError("workflow_data is None")
+        if workflow_dict is None:
+            raise ValueError("workflow_dict is None")
 
-        workflow = Workflow.from_dict(workflow_data)
-        n_tasks = len(workflow.tasks)
+        # Create workflow and environment objects
+        workflow = Workflow.from_experiment_dict(workflow_dict)
+        env = self._create_environment(env_dict)
+        
+        N = workflow.N
+        n_locations = len(env_dict.get('locations', {}))
 
-        env = self._normalize_env(environment or {})
+        # Create evaluator with parameters from paper (Equations 1-2, 8)
+        CT = params.get('CT', 0.2)  # Cost per unit time
+        CE = params.get('CE', 1.34)  # Cost per unit energy
+        delta_t = params.get('delta_t', 1)  # Time weight
+        delta_e = params.get('delta_e', 1)  # Energy weight
+        
+        evaluator = UtilityEvaluator(CT=CT, CE=CE, delta_t=delta_t, delta_e=delta_e)
 
-        locs = set()
-        for d in (env.get("DE", {}), env.get("VE", {}), env.get("VR", {})):
-            locs.update(d.keys())
-        for k in env.get("DR", {}).keys():
-            try:
-                src, dst = k
-                locs.add(src)
-                locs.add(dst)
-            except Exception:
-                pass
+        print(f"\n{'='*60}")
+        print(f"EVALUATOR: Searching for optimal offloading policy")
+        print(f"  Tasks (N): {N}")
+        print(f"  Locations: {n_locations} (0=IoT, 1-{n_locations-1}=Remote)")
+        print(f"  Cost Model: U(w,p) = {delta_t}*T + {delta_e}*E")
+        print(f"  CT={CT}, CE={CE}")
+        print(f"{'='*60}\n")
 
-        n_locations = max(locs) + 1 if locs else 2
-
-        # Prepare evaluator params
-        evaluator_params = {
-            "DE": env.get("DE", {}),
-            "VE": env.get("VE", {}),
-            "VR": env.get("VR", {}),
-            "DR": env.get("DR", {})
-        }
-        if params:
-            evaluator_params.update(params)
-
-        print("\nUsing Chain-of-Thought to generate intelligent candidate policies...")
-        llm_candidates = self.get_llm_guided_heuristics(workflow_data, environment, plan, params)
+        # Get LLM-guided candidate policies
+        print("Using Chain-of-Thought to generate intelligent candidate policies...")
+        llm_candidates = self.get_llm_guided_heuristics(workflow_dict, env_dict, plan, params)
         
         # Generate additional systematic candidates
         systematic_candidates = []
-        systematic_candidates.append(tuple(0 for _ in range(n_tasks)))
+        
+        # All local (baseline)
+        systematic_candidates.append(tuple(0 for _ in range(N)))
+        
+        # All on first remote server
         if n_locations > 1:
-            systematic_candidates.append(tuple(1 for _ in range(n_tasks)))
+            systematic_candidates.append(tuple(1 for _ in range(N)))
+        
+        # All on last server (typically cloud)
+        if n_locations > 1:
+            systematic_candidates.append(tuple(n_locations-1 for _ in range(N)))
+        
+        # Round-robin distribution
+        if n_locations > 1:
             for start in range(min(n_locations, 3)):
-                cand = tuple((start + i) % n_locations for i in range(n_tasks))
+                cand = tuple((start + i) % n_locations for i in range(N))
                 systematic_candidates.append(cand)
         
         # Combine candidates
         candidates = llm_candidates + [c for c in systematic_candidates if c not in llm_candidates]
         
-        # If problem is small enough, also do exhaustive search
+        # If problem is small, do exhaustive search
         max_exhaustive = 10000
-        total_combos = n_locations ** n_tasks
+        total_combos = n_locations ** N
         if total_combos <= max_exhaustive:
-            print(f"Problem size allows exhaustive search ({total_combos} combinations)")
-            all_candidates = list(itertools.product(range(n_locations), repeat=n_tasks))
+            print(f"✓ Problem size allows exhaustive search ({total_combos} combinations)")
+            all_candidates = list(itertools.product(range(n_locations), repeat=N))
             candidates = list(set(candidates + all_candidates))
         else:
-            print(f"Problem too large for exhaustive search ({total_combos} combinations)")
-            print(f"Using {len(candidates)} LLM-guided + heuristic candidates")
+            print(f"⚠ Problem too large for exhaustive search ({total_combos} combinations)")
+            print(f"  Using {len(candidates)} LLM-guided + heuristic candidates")
 
-        print(f"\nEvaluating {len(candidates)} candidate policies...")
+        print(f"\nEvaluating {len(candidates)} candidate policies using UtilityEvaluator...")
+        print(f"  Computing U(w,p) via Equations 3-8 from paper\n")
         
         best_policy = None
         best_cost = float("inf")
         evaluated = 0
         skipped = 0
 
-        for placement in candidates:
+        for placement_tuple in candidates:
             try:
-                cost = self.evaluator.total_offloading_cost(workflow, list(placement), evaluator_params)
+                # Convert to dict format: {1: loc1, 2: loc2, ..., N: locN}
+                placement_dict = {i: placement_tuple[i-1] for i in range(1, N + 1)}
+                
+                # Use UtilityEvaluator to compute total offloading cost
+                cost = evaluator.total_offloading_cost(workflow, placement_dict, env)
                 evaluated += 1
 
                 if cost is None or (isinstance(cost, float) and math.isinf(cost)):
@@ -263,12 +317,12 @@ Format: For each policy, list the location for each task [task0_loc, task1_loc, 
 
                 if cost < best_cost:
                     best_cost = cost
-                    best_policy = tuple(placement)
-                    print(f"  ✓ New best: {best_policy} with cost {best_cost:.6f}")
+                    best_policy = placement_tuple
+                    print(f"  ✓ New best: {best_policy} with U(w,p) = {best_cost:.6f}")
 
-            except KeyError:
+            except KeyError as e:
                 skipped += 1
-            except Exception:
+            except Exception as e:
                 skipped += 1
 
         return {
@@ -279,22 +333,29 @@ Format: For each policy, list the location for each task [task0_loc, task1_loc, 
         }
 
     def run(self, state: dict):
-        workflow_data = state.get("workflow")
-        environment = state.get("env", {})
+        workflow_dict = state.get("workflow")
+        env_dict = state.get("env", {})
         params = state.get("params", {})
         plan = state.get("plan", "")
 
-        if not isinstance(workflow_data, dict):
-            raise ValueError("workflow_data must be a dictionary")
+        if not isinstance(workflow_dict, dict):
+            raise ValueError("workflow_dict must be a dictionary")
 
-        result = self.find_best_policy(workflow_data, environment, params, plan)
+        result = self.find_best_policy(workflow_dict, env_dict, params, plan)
 
         if result["best_policy"] is None:
-            evaluation = f"No finite-cost policy found. evaluated={result['evaluated']}, skipped={result['skipped']}"
+            evaluation = f"No finite-cost policy found. Evaluated={result['evaluated']}, Skipped={result['skipped']}"
             optimal_policy = []
         else:
-            evaluation = f"Best policy found with total cost = {result['best_cost']}"
+            evaluation = f"Optimal policy found: U(w,p*) = {result['best_cost']:.6f}"
             optimal_policy = list(result['best_policy'])
+
+        print(f"\n{'='*60}")
+        print(f"EVALUATION COMPLETE:")
+        print(f"  {evaluation}")
+        print(f"  Evaluated: {result['evaluated']} policies")
+        print(f"  Skipped: {result['skipped']} policies")
+        print(f"{'='*60}\n")
 
         return {
             **state,
