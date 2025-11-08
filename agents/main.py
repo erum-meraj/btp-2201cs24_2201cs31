@@ -202,62 +202,53 @@ if __name__ == "__main__":
     # ------------------------ WORKFLOW DEFINITION ---------------------------
     # Define workflow as per the paper's format
     workflow_dict = {
-        "tasks": {
-            1: {"v": 5e6},    # Task 1: 5M CPU cycles
-            2: {"v": 10e6},   # Task 2: 10M CPU cycles
-            3: {"v": 8e6},    # Task 3: 8M CPU cycles
-        },
-        "edges": {
-            (1, 2): 2e6,      # Task 1 → Task 2: 2MB data
-            (2, 3): 1e6,      # Task 2 → Task 3: 1MB data
-        },
-        "N": 3  # Number of real tasks (excluding entry/exit)
-    }
+    "tasks": {
+        1: {"v": 2e6},    # light
+        2: {"v": 10e6},   # medium
+        3: {"v": 35e6},   # heavy
+        4: {"v": 18e6},   # medium
+        5: {"v": 28e6},   # heavy
+        6: {"v": 6e6},    # light
+    },
+    "edges": {
+        (1, 2): 15e6,     # 15 MB (big)
+        (2, 3): 0.8e6,    # 0.8 MB
+        (3, 4): 2e6,      # 2 MB
+        (4, 5): 1e6,      # 1 MB
+        (5, 6): 0.6e6,    # 0.6 MB
+    },
+    "N": 6,
+}
+
     
     # Create Workflow object from experiment dict
     wf = Workflow.from_experiment_dict(workflow_dict)
     
     # ------------------------ ENVIRONMENT DEFINITION ------------------------
     # Define location types: 0=IoT (mandatory), 1+=edge/cloud
-    locations_types = {
-        0: 'iot',    # IoT device (local execution)
-        1: 'edge',   # Edge server 1
-        2: 'cloud',  # Cloud server 1
-    }
+    locations_types = {0: "iot", 1: "edge_a", 2: "edge_b", 3: "cloud"}
     
     # DR: Data Time Consumption (ms/byte) - time to transfer 1 byte between locations
     DR_map = {
-        (0, 0): 0.0,        # IoT to IoT (no transfer)
-        (0, 1): 0.0001,     # IoT to Edge: 0.1 ms/MB = 0.0001 ms/byte
-        (0, 2): 0.001,      # IoT to Cloud: 1 ms/MB = 0.001 ms/byte
-        (1, 0): 0.0001,     # Edge to IoT
-        (1, 1): 0.0,        # Edge to Edge (no transfer)
-        (1, 2): 0.0005,     # Edge to Cloud
-        (2, 0): 0.001,      # Cloud to IoT
-        (2, 1): 0.0005,     # Cloud to Edge
-        (2, 2): 0.0,        # Cloud to Cloud (no transfer)
-    }
+    (0,0):0.0, (1,1):0.0, (2,2):0.0, (3,3):0.0,
+    (0,1):1.0e-05, (1,0):1.0e-05,   # IoT <-> Edge-A: 10 ms/MB
+    (0,2):1.5e-05, (2,0):1.5e-05,   # IoT <-> Edge-B: 15 ms/MB
+    (0,3):2.0e-03, (3,0):2.0e-03,   # IoT <-> Cloud: 2000 ms/MB (slow)
+    (1,2):4.0e-05, (2,1):4.0e-05,   # Edge-A <-> Edge-B: 40 ms/MB
+    (1,3):6.0e-05, (3,1):6.0e-05,   # Edge-A <-> Cloud: 60 ms/MB
+    (2,3):3.0e-05, (3,2):3.0e-05,   # Edge-B <-> Cloud: 30 ms/MB (fastest edge↔cloud)
+}
+
+
     
     # DE: Data Energy Consumption (mJ/byte) - energy to process 1 byte at location
-    DE_map = {
-        0: 0.0001,   # IoT: 0.1 mJ/KB = 0.0001 mJ/byte
-        1: 0.00005,  # Edge: 0.05 mJ/KB
-        2: 0.00002,  # Cloud: 0.02 mJ/KB
-    }
+    DE_map = {0: 1.20e-4, 1: 2.50e-5, 2: 2.20e-5, 3: 1.80e-5}
     
     # VR: Task Time Consumption (ms/cycle) - time to execute 1 CPU cycle
-    VR_map = {
-        0: 1e-7,     # IoT: 10 GHz = 1e-7 ms/cycle
-        1: 2e-8,     # Edge: 50 GHz = 2e-8 ms/cycle
-        2: 1e-8,     # Cloud: 100 GHz = 1e-8 ms/cycle
-    }
+    VR_map = {0: 1.0e-7, 1: 3.0e-8, 2: 2.0e-8, 3: 1.0e-8}
     
     # VE: Task Energy Consumption (mJ/cycle) - energy per CPU cycle
-    VE_map = {
-        0: 5e-7,     # IoT: higher energy per cycle
-        1: 2e-7,     # Edge: medium energy
-        2: 1e-7,     # Cloud: lower energy per cycle
-    }
+    VE_map = {0: 6.0e-7, 1: 3.0e-7, 2: 2.0e-7, 3: 1.2e-7}
     
     # Create environment dictionary
     env_dict = create_environment_dict(
@@ -280,11 +271,12 @@ if __name__ == "__main__":
     # ------------------------ OPTIMIZATION PARAMETERS -----------------------
     # Cost coefficients and mode as per the paper
     params = {
-        "CT": 0.2,      # Cost per unit time (Eq. 1)
-        "CE": 1.34,     # Cost per unit energy (Eq. 2)
-        "delta_t": 1,   # Weight for time cost (1=enabled, 0=disabled)
-        "delta_e": 1,   # Weight for energy cost (1=enabled, 0=disabled)
-    }
+    "CT": 0.2,       # Cost per unit time (Eq. 1)
+    "CE": 1.20,      # Cost per unit energy (Eq. 2)
+    "delta_t": 1,    # Weight for time cost (1=enabled, 0=disabled)
+    "delta_e": 1,    # Weight for energy cost (1=enabled, 0=disabled)
+    "fixed_locations": {1: 0},  # Task 1 fixed on IoT
+}
     # Note: delta_t=1, delta_e=1 → Balanced Mode
     #       delta_t=1, delta_e=0 → Low Latency Mode
     #       delta_t=0, delta_e=1 → Low Power Mode

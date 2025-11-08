@@ -1,4 +1,4 @@
-# agents/evaluator.py - FULLY INTEGRATED with UtilityEvaluator and paper specifications
+# agents/evaluator.py - FIXED: (1) real location IDs, (2) constraints enforcement
 import itertools
 import math
 from core.workflow import Workflow
@@ -70,7 +70,6 @@ class EvaluatorAgent(BaseAgent):
         if vr:
             details.append("Task Execution Speed VR(li) [ms/cycle]:")
             for loc, rate in sorted(vr.items()):
-                # Convert to effective GHz for readability
                 ghz = 1.0 / (rate * 1e6) if rate > 0 else float('inf')
                 details.append(f"  Location {loc}: {rate:.6e} ms/cycle (≈{ghz:.1f} GHz)")
             details.append("")
@@ -86,34 +85,27 @@ class EvaluatorAgent(BaseAgent):
 
     def get_llm_guided_heuristics(self, workflow_dict: dict, env_dict: dict, plan: str, params: dict):
         """Use LLM with CoT to generate heuristic guidance for policy search."""
-        
-        # Extract workflow details
         tasks = workflow_dict.get('tasks', {})
         edges = workflow_dict.get('edges', {})
         N = workflow_dict.get('N', 0)
         
-        # Get available locations
+        # FIX(1): use actual location IDs (not 0..n-1)
         locations = env_dict.get('locations', {})
-        n_locations = len(locations)
-        
+        location_ids = sorted(locations.keys())
+
         env_details = self._format_env_for_prompt(env_dict)
         
-        # Build task details with paper notation
         task_details = []
         for task_id in sorted(tasks.keys()):
             task_data = tasks[task_id]
             v_i = task_data.get('v', 0)
-            
-            # Find dependencies
             parents = [j for (j, k), _ in edges.items() if k == task_id]
             children_deps = [(k, edges[(task_id, k)]) for (j, k), _ in edges.items() if j == task_id]
             
             task_details.append(f"\nTask {task_id}:")
             task_details.append(f"  v_{task_id} = {v_i:.2e} CPU cycles")
-            
             if parents:
                 task_details.append(f"  Depends on: Tasks {parents}")
-            
             if children_deps:
                 task_details.append(f"  Data output to:")
                 for k, d_ik in children_deps:
@@ -135,40 +127,13 @@ You are helping optimize task offloading decisions for an edge-cloud system foll
 {plan[:800]}
 
 ## Your Task:
-Generate 3-5 intelligent candidate placement policies p = {{l_1, l_2, ..., l_{N}}} where:
-- l_i = 0 means execute Task i locally on IoT device
-- l_i ≥ 1 means offload Task i to remote server l_i
-
-Consider these heuristics from the paper:
-
-1. **Computation-Heavy Tasks**: High v_i with low data dependencies → Good candidates for offloading
-   
-2. **Data-Heavy Tasks**: Low v_i but high d_{{i,j}} → May be better local to avoid transfer overhead
-
-3. **Dependent Task Co-location**: If d_{{i,j}} is large, placing Tasks i and j on same location reduces transfer
-
-4. **Critical Path Optimization**: Tasks on critical path should be placed on fastest available locations
-
-5. **Mode-Specific Strategy**:
-   - Low Latency: Prioritize fastest execution (VR), tolerate data transfer
-   - Low Power: Minimize energy (VE, DE), accept slower execution  
-   - Balanced: Find sweet spot between speed and energy
+Generate 3-5 intelligent candidate placement policies p = {{l_1, l_2, ..., l_{N}}} using ONLY these location IDs: {location_ids}
 
 Provide candidate policies as lists: [l_1, l_2, ..., l_{N}]
-
-Example format:
-- Policy 1: [0, 1, 1] - Task 1 local, Tasks 2-3 on Edge
-- Policy 2: [1, 2, 2] - Task 1 on Edge, Tasks 2-3 on Cloud
 """
-        
-        # Log the prompt
         self._log_interaction("EVALUATOR", prompt, None, "PROMPT")
-        
         result = self.think_with_cot(prompt, return_reasoning=True)
-        
         full_response = f"REASONING:\n{result['reasoning']}\n\nCANDIDATE POLICIES:\n{result['answer']}"
-        
-        # Log the response
         self._log_interaction("EVALUATOR", None, full_response, "RESPONSE")
         
         print("\n" + "="*60)
@@ -177,36 +142,33 @@ Example format:
         print(result['reasoning'][:400] + "...")
         print("="*60 + "\n")
 
-        policies = self._parse_policies_from_text(result['answer'], N, n_locations)
-        
+        # FIX(1): validate against actual IDs
+        policies = self._parse_policies_from_text(result['answer'], N, location_ids)
         return policies
 
-    def _parse_policies_from_text(self, text: str, n_tasks: int, n_locations: int):
+    # FIX(1): change validator to use valid_location_ids
+    def _parse_policies_from_text(self, text: str, n_tasks: int, valid_location_ids):
         """Extract policy suggestions from LLM text output."""
         import re
-        
+        valid = set(valid_location_ids)
         policies = []
 
-        # Match patterns like [0, 1, 2] or (0, 1, 2)
         pattern = r'[\[\(](\d+(?:\s*,\s*\d+)*)[\]\)]'
-        matches = re.findall(pattern, text)
-        
+        matches = re.findall(pattern, text or "")
         for match in matches:
             try:
                 policy = [int(x.strip()) for x in match.split(',')]
-                if len(policy) == n_tasks and all(0 <= loc < n_locations for loc in policy):
+                if len(policy) == n_tasks and all(loc in valid for loc in policy):
                     policies.append(tuple(policy))
             except:
                 continue
 
-        # Remove duplicates while preserving order
         seen = set()
         unique_policies = []
         for p in policies:
             if p not in seen:
                 seen.add(p)
                 unique_policies.append(p)
-        
         return unique_policies[:5]
 
     def _log_interaction(self, agent: str, prompt: str, response: str, msg_type: str):
@@ -225,6 +187,24 @@ Example format:
                 f.write(response)
                 f.write("\n" + "="*80 + "\n\n")
 
+    # FIX(2): constraints helper
+    @staticmethod
+    def _violates_constraints(policy_tuple, fixed, allowed):
+        """
+        fixed:   {task_id -> required_location_id}
+        allowed: {task_id -> iterable-of-allowed-location-ids}
+        """
+        N = len(policy_tuple)
+        if fixed:
+            for t, loc in fixed.items():
+                if 1 <= t <= N and policy_tuple[t - 1] != loc:
+                    return True
+        if allowed:
+            for t, allowed_set in allowed.items():
+                if 1 <= t <= N and policy_tuple[t - 1] not in set(allowed_set):
+                    return True
+        return False
+
     def find_best_policy(self, workflow_dict: dict, env_dict: dict, params: dict, plan: str = ""):
         """
         Search for optimal placement using CoT-guided heuristics + exhaustive search.
@@ -233,66 +213,61 @@ Example format:
         if workflow_dict is None:
             raise ValueError("workflow_dict is None")
 
-        # Create workflow and environment objects
         workflow = Workflow.from_experiment_dict(workflow_dict)
         env = self._create_environment(env_dict)
         
         N = workflow.N
-        n_locations = len(env_dict.get('locations', {}))
 
-        # Create evaluator with parameters from paper (Equations 1-2, 8)
-        CT = params.get('CT', 0.2)  # Cost per unit time
-        CE = params.get('CE', 1.34)  # Cost per unit energy
-        delta_t = params.get('delta_t', 1)  # Time weight
-        delta_e = params.get('delta_e', 1)  # Energy weight
-        
+        # FIX(1): derive actual location IDs once
+        location_ids = sorted((env_dict.get('locations') or {}).keys())
+        n_locations = len(location_ids)
+
+        # Evaluator params
+        CT = params.get('CT', 0.2)
+        CE = params.get('CE', 1.34)
+        delta_t = params.get('delta_t', 1)
+        delta_e = params.get('delta_e', 1)
         evaluator = UtilityEvaluator(CT=CT, CE=CE, delta_t=delta_t, delta_e=delta_e)
 
         print(f"\n{'='*60}")
         print(f"EVALUATOR: Searching for optimal offloading policy")
         print(f"  Tasks (N): {N}")
-        print(f"  Locations: {n_locations} (0=IoT, 1-{n_locations-1}=Remote)")
+        print(f"  Locations: {n_locations} with IDs {location_ids}")
         print(f"  Cost Model: U(w,p) = {delta_t}*T + {delta_e}*E")
         print(f"  CT={CT}, CE={CE}")
         print(f"{'='*60}\n")
 
-        # Get LLM-guided candidate policies
+        # LLM-guided candidates
         print("Using Chain-of-Thought to generate intelligent candidate policies...")
         llm_candidates = self.get_llm_guided_heuristics(workflow_dict, env_dict, plan, params)
-        
-        # Generate additional systematic candidates
+
+        # Systematic candidates (FIX(1): use real IDs)
         systematic_candidates = []
-        
-        # All local (baseline)
-        systematic_candidates.append(tuple(0 for _ in range(N)))
-        
-        # All on first remote server
-        if n_locations > 1:
-            systematic_candidates.append(tuple(1 for _ in range(N)))
-        
-        # All on last server (typically cloud)
-        if n_locations > 1:
-            systematic_candidates.append(tuple(n_locations-1 for _ in range(N)))
-        
-        # Round-robin distribution
-        if n_locations > 1:
-            for start in range(min(n_locations, 3)):
-                cand = tuple((start + i) % n_locations for i in range(N))
-                systematic_candidates.append(cand)
-        
-        # Combine candidates
+        for lid in location_ids:
+            systematic_candidates.append(tuple(lid for _ in range(N)))  # all on each available location
+
+        # simple round-robin seeds over actual IDs
+        for start in range(min(n_locations, 3)):
+            cand = tuple(location_ids[(start + i) % n_locations] for i in range(N))
+            systematic_candidates.append(cand)
+
+        # Combine
         candidates = llm_candidates + [c for c in systematic_candidates if c not in llm_candidates]
-        
-        # If problem is small, do exhaustive search
+
+        # Exhaustive completion (FIX(1): over real IDs)
         max_exhaustive = 10000
         total_combos = n_locations ** N
         if total_combos <= max_exhaustive:
             print(f"✓ Problem size allows exhaustive search ({total_combos} combinations)")
-            all_candidates = list(itertools.product(range(n_locations), repeat=N))
+            all_candidates = list(itertools.product(location_ids, repeat=N))
             candidates = list(set(candidates + all_candidates))
         else:
             print(f"⚠ Problem too large for exhaustive search ({total_combos} combinations)")
             print(f"  Using {len(candidates)} LLM-guided + heuristic candidates")
+
+        # FIX(2): read constraints
+        fixed = params.get("fixed_locations", {}) or {}
+        allowed = params.get("allowed_locations", None)
 
         print(f"\nEvaluating {len(candidates)} candidate policies using UtilityEvaluator...")
         print(f"  Computing U(w,p) via Equations 3-8 from paper\n")
@@ -303,27 +278,24 @@ Example format:
         skipped = 0
 
         for placement_tuple in candidates:
+            # FIX(2): enforce constraints
+            if self._violates_constraints(placement_tuple, fixed, allowed):
+                skipped += 1
+                continue
             try:
-                # Convert to dict format: {1: loc1, 2: loc2, ..., N: locN}
                 placement_dict = {i: placement_tuple[i-1] for i in range(1, N + 1)}
-                
-                # Use UtilityEvaluator to compute total offloading cost
                 cost = evaluator.total_offloading_cost(workflow, placement_dict, env)
                 evaluated += 1
-
                 if cost is None or (isinstance(cost, float) and math.isinf(cost)):
                     skipped += 1
                     continue
-
                 if cost < best_cost:
                     best_cost = cost
                     best_policy = placement_tuple
                     print(f"  ✓ New best: {best_policy} with U(w,p) = {best_cost:.6f}")
-
-            except KeyError as e:
+            except Exception:
                 skipped += 1
-            except Exception as e:
-                skipped += 1
+                continue
 
         return {
             "best_policy": best_policy,

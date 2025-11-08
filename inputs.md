@@ -1,204 +1,117 @@
-## Common Environment Setup
+`
+workflow_dict = {
+"tasks": {
+1: {"v": 4e6}, # 4M cycles (light)
+2: {"v": 20e6}, # 20M cycles (heavy)
+3: {"v": 6e6}, # 6M cycles (medium)
+4: {"v": 12e6}, # 12M cycles (heavy)
+5: {"v": 5e6}, # 5M cycles (light, sink)
+},
+"edges": {
+(1, 3): 5e6, # 5 MB
+(2, 3): 12e6, # 12 MB (big!)
+(3, 4): 2e6, # 2 MB
+(3, 5): 6e6, # 6 MB
+(4, 5): 1e6, # 1 MB (join at task 5)
+},
+"N": 5
+}
 
-```python
-from core.network import Network, Node
-from core.environment import Environment
-from core.workflow import Workflow, Task
-from agents.workflow import run_workflow
+    # Create Workflow object from experiment dict
+    wf = Workflow.from_experiment_dict(workflow_dict)
 
-# Common network structure for all examples
-network = Network()
-network.add_node(Node(0, 'edge', compute_power=10e9, energy_coeff=0.5))
-network.add_node(Node(1, 'cloud', compute_power=50e9, energy_coeff=0.2))
-network.add_link(0, 1, bandwidth=10e6, delay=0.01)
-network.add_link(1, 0, bandwidth=10e6, delay=0.01)
-network.add_link(0, 0, bandwidth=10e6, delay=0.0)
-network.add_link(1, 1, bandwidth=10e6, delay=0.0)
+    # ------------------------ ENVIRONMENT DEFINITION ------------------------
+    # Define location types: 0=IoT (mandatory), 1+=edge/cloud
+    locations_types = {
+    0: "iot",
+    1: "edge",
+    2: "edge",
+    3: "cloud",
+    4: "cloud",
 
-env = Environment(network)
-env.randomize(seed=42)
-```
+}
 
----
+    # DR: Data Time Consumption (ms/byte) - time to transfer 1 byte between locations
+    DR_map = {
+    (0,0):0.0,      (1,1):0.0,      (2,2):0.0,      (3,3):0.0,      (4,4):0.0,
 
-## Example 1 — Face Recognition Workflow
+    # IoT <-> Edges
+    (0,1):0.00012,  (1,0):0.00012,  # 0.12 ms/MB
+    (0,2):0.00018,  (2,0):0.00018,  # 0.18 ms/MB
 
-**Description:**
-A sequential pipeline for image-based face detection and classification.
-Each task represents one processing stage, from data acquisition to display.
+    # IoT <-> Clouds (CloudB slower uplink from IoT)
+    (0,3):0.00150,  (3,0):0.00150,  # 1.5 ms/MB
+    (0,4):0.00250,  (4,0):0.00250,  # 2.5 ms/MB
 
-### Code Example
+    # Edge <-> Edge
+    (1,2):0.00008,  (2,1):0.00008,  # 0.08 ms/MB
 
-```python
-tasks = [
-    Task(0, size=4.0, dependencies={}),
-    Task(1, size=6.0, dependencies={0: 2.0}),
-    Task(2, size=8.0, dependencies={1: 1.0}),
-    Task(3, size=10.0, dependencies={2: 1.0}),
-    Task(4, size=6.0, dependencies={3: 1.0}),
-    Task(5, size=5.0, dependencies={4: 1.0}),
-    Task(6, size=5.0, dependencies={5: 1.0}),
-    Task(7, size=3.0, dependencies={6: 1.0}),
-    Task(8, size=2.0, dependencies={7: 0.5})
-]
-wf = Workflow(tasks)
+    # Edge <-> Clouds
+    (1,3):0.00050,  (3,1):0.00050,  # 0.5 ms/MB
+    (1,4):0.00100,  (4,1):0.00100,  # 1.0 ms/MB
+    (2,3):0.00060,  (3,2):0.00060,  # 0.6 ms/MB
+    (2,4):0.00070,  (4,2):0.00070,  # 0.7 ms/MB
 
-result = run_workflow("Face Recognition Offloading", {
-    "env": env.get_all_parameters(),
-    "workflow": wf.to_dict(),
-    "params": {"CT": 0.2, "CE": 1.34, "delta_t": 1, "delta_e": 1}
-})
-```
+    # Cloud <-> Cloud (very fast)
+    (3,4):0.00005,  (4,3):0.00005,  # 0.05 ms/MB
 
-### DAG Visualization
+}
 
-```mermaid
-graph TD
-    T0["Task 0: Source"]
-    T1["Task 1: Copy"]
-    T2["Task 2: Tiler"]
-    T3["Task 3: Detect"]
-    T4["Task 4: Feature Merger"]
-    T5["Task 5: Graph Splitter"]
-    T6["Task 6: Classify"]
-    T7["Task 7: Recognition Merge"]
-    T8["Task 8: Display"]
+    # DE: Data Energy Consumption (mJ/byte) - energy to process 1 byte at location
+    DE_map = {
+    0: 0.00012,   # IoT
+    1: 0.00006,   # EdgeA
+    2: 0.00005,   # EdgeB (slightly better than EdgeA)
+    3: 0.00003,   # CloudA
+    4: 0.00002,   # CloudB (best)
 
-    T0 --> T1
-    T1 --> T2
-    T2 --> T3
-    T3 --> T4
-    T4 --> T5
-    T5 --> T6
-    T6 --> T7
-    T7 --> T8
-```
+}
 
----
+    # VR: Task Time Consumption (ms/cycle) - time to execute 1 CPU cycle
+    VR_map = {
+    0: 1.2e-7,    # IoT (slowest)
+    1: 3.0e-8,    # EdgeA
+    2: 2.2e-8,    # EdgeB
+    3: 1.4e-8,    # CloudA
+    4: 1.0e-8,    # CloudB (fastest)
 
-## Example 2 — Object Recognition Workflow
+}
 
-**Description:**
-A multi-stage object recognition process involving feature extraction, matching, and clustering.
+    # VE: Task Energy Consumption (mJ/cycle) - energy per CPU cycle
+    VE_map = {
+    0: 6.0e-7,    # IoT (least efficient)
+    1: 2.5e-7,    # EdgeA
+    2: 2.0e-7,    # EdgeB
+    3: 1.4e-7,    # CloudA
+    4: 1.1e-7,    # CloudB (most efficient)
 
-### Code Example
+}
 
-```python
-tasks = [
-    Task(0, size=5.0, dependencies={}),
-    Task(1, size=6.0, dependencies={0: 1.0}),
-    Task(2, size=6.0, dependencies={1: 1.0}),
-    Task(3, size=8.0, dependencies={2: 1.5}),
-    Task(4, size=10.0, dependencies={3: 1.0}),
-    Task(5, size=7.0, dependencies={4: 1.0}),
-    Task(6, size=5.0, dependencies={5: 1.0}),
-    Task(7, size=6.0, dependencies={6: 1.0}),
-    Task(8, size=7.0, dependencies={7: 1.0}),
-    Task(9, size=5.0, dependencies={8: 1.0}),
-    Task(10, size=4.0, dependencies={9: 1.0}),
-    Task(11, size=4.0, dependencies={10: 1.0}),
-    Task(12, size=3.0, dependencies={11: 0.5}),
-    Task(13, size=2.0, dependencies={12: 0.5})
-]
-wf = Workflow(tasks)
+    # Create environment dictionary
+    env_dict = create_environment_dict(
+        locations_types=locations_types,
+        DR_map=DR_map,
+        DE_map=DE_map,
+        VR_map=VR_map,
+        VE_map=VE_map
+    )
 
-result = run_workflow("Object Recognition Offloading", {
-    "env": env.get_all_parameters(),
-    "workflow": wf.to_dict(),
-    "params": {"CT": 0.2, "CE": 1.34, "delta_t": 1, "delta_e": 1}
-})
-```
+    # Create Environment object
+    env = Environment.from_matrices(
+        types=locations_types,
+        DR_matrix=DR_map,
+        DE_vector=DE_map,
+        VR_vector=VR_map,
+        VE_vector=VE_map
+    )
 
-### DAG Visualization
+    # ------------------------ OPTIMIZATION PARAMETERS -----------------------
+    # Cost coefficients and mode as per the paper
+    params = {
+        "CT": 0.18,      # Cost per unit time (Eq. 1)
+        "CE": 1.20,     # Cost per unit energy (Eq. 2)
+        "delta_t": 1,   # Weight for time cost (1=enabled, 0=disabled)
+        "delta_e": 1,   # Weight for energy cost (1=enabled, 0=disabled)
+    }
 
-```mermaid
-graph TD
-    T0["Task 0: Source"]
-    T1["Task 1: Copy"]
-    T2["Task 2: Scaler"]
-    T3["Task 3: Tiler"]
-    T4["Task 4: SIFT"]
-    T5["Task 5: Feature Merger"]
-    T6["Task 6: Descaler"]
-    T7["Task 7: Feature Splitter"]
-    T8["Task 8: Model Matcher"]
-    T9["Task 9: Model Joiner"]
-    T10["Task 10: Cluster Splitter"]
-    T11["Task 11: Cluster Joiner"]
-    T12["Task 12: RANSAC"]
-    T13["Task 13: Display"]
-
-    T0 --> T1
-    T1 --> T2
-    T2 --> T3
-    T3 --> T4
-    T4 --> T5
-    T5 --> T6
-    T6 --> T7
-    T7 --> T8
-    T8 --> T9
-    T9 --> T10
-    T10 --> T11
-    T11 --> T12
-    T12 --> T13
-```
-
----
-
-## Example 3 — Gesture Recognition Workflow
-
-**Description:**
-A temporal data pipeline for recognizing gestures through motion-based SIFT features and classification.
-
-### Code Example
-
-```python
-tasks = [
-    Task(0, size=4.0, dependencies={}),
-    Task(1, size=6.0, dependencies={0: 1.0}),
-    Task(2, size=6.0, dependencies={1: 1.0}),
-    Task(3, size=7.0, dependencies={2: 1.0}),
-    Task(4, size=8.0, dependencies={3: 1.0}),
-    Task(5, size=10.0, dependencies={4: 1.0}),
-    Task(6, size=6.0, dependencies={5: 1.0}),
-    Task(7, size=5.0, dependencies={6: 1.0}),
-    Task(8, size=4.0, dependencies={7: 0.5}),
-    Task(9, size=5.0, dependencies={8: 0.5}),
-    Task(10, size=3.0, dependencies={9: 0.5})
-]
-wf = Workflow(tasks)
-
-result = run_workflow("Gesture Recognition Offloading", {
-    "env": env.get_all_parameters(),
-    "workflow": wf.to_dict(),
-    "params": {"CT": 0.2, "CE": 1.34, "delta_t": 1, "delta_e": 1}
-})
-```
-
-### DAG Visualization
-
-```mermaid
-graph TD
-    T0["Task 0: Source"]
-    T1["Task 1: Copy"]
-    T2["Task 2: Pair Generator"]
-    T3["Task 3: Scaler"]
-    T4["Task 4: Tiler"]
-    T5["Task 5: Motion SIFT"]
-    T6["Task 6: Feature Merger"]
-    T7["Task 7: Descaler"]
-    T8["Task 8: Copy"]
-    T9["Task 9: Classify"]
-    T10["Task 10: Display"]
-
-    T0 --> T1
-    T1 --> T2
-    T2 --> T3
-    T3 --> T4
-    T4 --> T5
-    T5 --> T6
-    T6 --> T7
-    T7 --> T8
-    T8 --> T9
-    T9 --> T10
-```
+`
