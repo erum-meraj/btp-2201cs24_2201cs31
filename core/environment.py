@@ -18,7 +18,7 @@ class Location:
 
 class Environment:
     """
-    Environment model exactly as in the paper (Section III-A):
+    Environment model (Section III-A):
       - DR(li, lj): Data Time Consumption (ms/byte)
       - DE(li):    Data Energy Consumption (mJ/byte)
       - VR(li):    Task Time Consumption (ms/cycle)

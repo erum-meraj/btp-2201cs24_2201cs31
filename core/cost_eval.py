@@ -5,6 +5,8 @@ import math
 from core.workflow import Workflow
 from core.environment import Environment
 
+from core.utils import topological_sort
+
 
 class UtilityEvaluator:
     """
@@ -13,8 +15,7 @@ class UtilityEvaluator:
       - E = CE * (ED + EV)
       - T = CT * Delta_max(delay-DAG)
     
-    Based on the paper "Deep Meta Q-Learning Based Multi-Task Offloading 
-    in Edge-Cloud Systems" (Section III-C: Cost Model)
+    (Section III-C: Cost Model)
     """
 
     def __init__(self, CT: float = 0.2, CE: float = 1.34, delta_t: int = 1, delta_e: int = 1):
@@ -36,7 +37,7 @@ class UtilityEvaluator:
         """
         Compute ED: total data communication energy cost (Equation 4)
         
-        ED = sum_{i=1}^{N} [ DE(li) * (sum_{j in Ji} d_{j,i} + sum_{k in Ki} d_{i,k}) ]
+        ED = sum_{i= 1-N} [ DE(li) * (sum_{j in Ji} d_{j,i} + sum_{k in Ki} d_{i,k}) ]
         
         Args:
             workflow: Workflow object containing tasks and dependencies
@@ -48,7 +49,6 @@ class UtilityEvaluator:
         """
         ED = 0.0
         
-        # Get parent and child relationships
         Ji = workflow.Ji()  # parents of each node
         D = workflow.D()    # all edges (i,j) -> d_{i,j}
         
@@ -57,7 +57,7 @@ class UtilityEvaluator:
             li = placement[i]
             
             # Incoming data from parents: sum_{j in Ji} d_{j,i}
-            incoming = sum(D.get((j, i), 0.0) for j in Ji.get(i, []))
+            incoming = sum(D.get((j,i), 0.0) for j in Ji.get(i, []))
             
             # Outgoing data to children: sum_{k in Ki} d_{i,k}
             outgoing = sum(D.get((i, k), 0.0) for k in workflow.Ki().get(i, []))
@@ -71,7 +71,7 @@ class UtilityEvaluator:
         """
         Compute EV: total execution energy (Equation 5)
         
-        EV = sum_{i=1}^{N} [ vi * VE(li) ]
+        EV = sum_{i = 1-N} [ vi * VE(li) ]
         
         Args:
             workflow: Workflow object containing tasks
@@ -82,7 +82,7 @@ class UtilityEvaluator:
             Total execution energy cost
         """
         EV = 0.0
-        V = workflow.V()  # task sizes
+        V = workflow.V()  # task sizes (cc)
         
         # Iterate over real tasks (1 to N)
         for i in range(1, workflow.N + 1):
@@ -163,24 +163,6 @@ class UtilityEvaluator:
         Ki = workflow.Ki()  # children of each node
         vertices = workflow.vertices()
         
-        # Topological sort using DFS
-        def topological_sort():
-            visited = set()
-            stack = []
-            
-            def dfs(v):
-                visited.add(v)
-                for u in Ki.get(v, []):
-                    if u not in visited:
-                        dfs(u)
-                stack.append(v)
-            
-            for v in vertices:
-                if v not in visited:
-                    dfs(v)
-            
-            return stack[::-1]
-        
         order = topological_sort()
         
         # Initialize distances
@@ -195,8 +177,7 @@ class UtilityEvaluator:
             for v in Ki.get(u, []):
                 # Compute edge weight using placement
                 if u == 0:
-                    # Entry node: only task execution time at destination
-                    w_uv = 0.0  # Entry node has no computation
+                    w_uv = 0.0 
                 elif v == workflow.N + 1:
                     # Exit node: only include task u execution and data transfer
                     w_uv = self.compute_delay_edge_weight(u, v, workflow, placement, env)
