@@ -1,4 +1,3 @@
-# runner/run_graph.py
 from langgraph.graph import StateGraph, END
 from agents.planner import PlannerAgent
 from agents.evaluator import EvaluatorAgent
@@ -10,8 +9,8 @@ def run_experiment(api_key: str, env_context: dict):
     output_agent = OutputAgent(api_key)
 
     graph = StateGraph(dict)
-    graph.add_node("planner", lambda s: {"plan": planner.create_plan(s["env"])})
-    graph.add_node("evaluator", lambda s: {"evaluation": evaluator.evaluate_plan(s["plan"], s["env"])})
+    graph.add_node("planner", lambda s: {"plan": planner.create_plan(s["env"]),"env": s["env"]})
+    graph.add_node("evaluator", lambda s: {"evaluation": evaluator.evaluate_plan(s["plan"], s["env"]),"plan": s["plan"]})
     graph.add_node("output", lambda s: {"output": output_agent.format_output(s["plan"], s["evaluation"])})
 
     graph.set_entry_point("planner")
@@ -35,6 +34,10 @@ if __name__ == "__main__":
     env_context = {
         "tasks": ["T1", "T2", "T3"],
         "network": {"bandwidth": "10Mbps", "latency": "20ms"},
+        "resources": {"edge": "low", "cloud": "high"}
+    }
+
+    run_experiment(API_KEY, env_context)        "network": {"bandwidth": "10Mbps", "latency": "20ms"},
         "resources": {"edge": "low", "cloud": "high"}
     }
 
