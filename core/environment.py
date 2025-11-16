@@ -37,10 +37,10 @@ class Environment:
         VE_map: Dict[int, float],
     ) -> None:
         self.locations = locations
-        self._DR = DR_map   # (li, lj) -> ms/byte
-        self._DE = DE_map   # li -> mJ/byte
-        self._VR = VR_map   # li -> ms/cycle
-        self._VE = VE_map   # li -> mJ/cycle
+        self._DR = DR_map
+        self._DE = DE_map
+        self._VR = VR_map
+        self._VE = VE_map
         self._validate()
 
     # -------------------- Paper-defined functions --------------------

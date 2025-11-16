@@ -113,8 +113,8 @@ Your job is to analyze the task offloading problem and create a comprehensive pl
 ## Environment Configuration (Section III-A of the paper):
 Available Locations (l):
   l=0: IOT
-  l=1: EDGE_A
-  l=2: EDGE_B
+  l=1: EDGE
+  l=2: EDGE
   l=3: CLOUD
 
 DR(li, lj) - Data Time Consumption (ms/byte):
@@ -241,7 +241,7 @@ Analyze this edge-cloud offloading scenario step-by-step following the paper's f
    - Low Power Mode (delta_t=0, delta_e=1): Minimize energy consumption  
    - Balanced Mode (delta_t=1, delta_e=1): Optimize both objectives
 
-5. **Placement Strategy Recommendations**:
+5. **location_types Strategy Recommendations**:
    - Which tasks should remain local (l_i=0)?
    - Which tasks benefit from edge offloading?
    - Which tasks justify cloud offloading despite higher latency?
