@@ -226,7 +226,7 @@ if __name__ == "__main__":
     
     # ------------------------ ENVIRONMENT DEFINITION ------------------------
     # Define location types: 0=IoT (mandatory), 1+=edge/cloud
-    locations_types = {0: "iot", 1: "edge_a", 2: "edge_b", 3: "cloud"}
+    locations_types = {0: "iot", 1: "edge", 2: "edge", 3: "cloud"}
     
     # DR: Data Time Consumption (ms/byte) - time to transfer 1 byte between locations
     DR_map = {
