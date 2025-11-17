@@ -1,25 +1,21 @@
 #!/usr/bin/env python3
 """
-generate_dataset_json_smallvalues.py
+generate_dataset_json_smallvalues_with_id.py
 
 Generate a JSON dataset of workflow DAGs with environment maps
 that follow the example pattern you provided.
 
-Each instance JSON object:
-{
-  "workflow": {"tasks": {"1": {"v": 2e6}, ...}, "edges": [[i,j,size],...], "N": int},
-  "location_types": {"1": 0, "2": 1, ...},
-  "env": {"DR": [[li,lj,val], ...], "DE": [[l,val],...], "VR": [[l,val],...], "VE": [[l,val],...]},
-  "costs": {"CT": float, "CE": float},
-  "mode": {"delta_t":0/1, "delta_e":0/1},
-  "meta": {...}
-}
+Each instance JSON object includes:
+  - "id": unique UUID string (primary key)
+  - "pk": integer primary key (0-based index in file)
+  - other fields as before...
 """
 
 import argparse
 import json
 import math
 import random
+import uuid
 from typing import List, Dict, Any
 
 def make_instance_smallvalues(
@@ -94,22 +90,18 @@ def make_instance_smallvalues(
     edgecount = len(raw_edges)
 
     # --- TASK LOADS (cycles) ---
-    # Use realistic ranges following your example: light ~2e6, medium ~10-20e6, heavy up to 35e6
     tasks: Dict[str, Dict[str, float]] = {}
     for tid in range(1, N+1):
-        # sample uniformly between 1e6 and 35e6 (you can change distribution if needed)
         v_i = random.randint(1_000_000, 35_000_000)
         tasks[str(tid)] = {"v": float(v_i)}
 
     # --- EDGE SIZES (bytes) ---
-    # Use MB-ish sizes in bytes, small values matching the example:
-    # e.g., 0.6e6 .. 15e6 bytes (0.6 MB .. 15 MB)
     edges_list: List[List[float]] = []
     for (u, v_) in raw_edges:
         size = random.choice([
-            random.uniform(0.5e6, 1.5e6),   # small edges ~0.5-1.5 MB
-            random.uniform(1.5e6, 3.0e6),   # medium ~1.5-3 MB
-            random.uniform(3.0e6, 15.0e6)   # larger ~3-15 MB
+            random.uniform(0.5e6, 1.5e6),
+            random.uniform(1.5e6, 3.0e6),
+            random.uniform(3.0e6, 15.0e6)
         ])
         edges_list.append([int(u), int(v_), float(size)])
 
@@ -117,55 +109,43 @@ def make_instance_smallvalues(
     location_types = {str(tid): random.randint(0, num_remote) for tid in range(1, N+1)}
 
     # --- ENV maps following example pattern ---
-    # locations: 0..num_remote (0 is IoT)
     locations = list(range(0, num_remote + 1))
     DR_rows: List[List[float]] = []
     DE_rows: List[List[float]] = []
     VR_rows: List[List[float]] = []
     VE_rows: List[List[float]] = []
 
-    # We'll define few typical ranges based on your example:
-    # - DR(self)=0
-    # - IoT <-> Edge: ~1e-5 ms/byte (10 ms/MB)
-    # - IoT <-> Cloud: ~2e-3 ms/byte (2000 ms/MB)
-    # - Edge <-> Edge and Edge <-> Cloud: 3e-5 .. 6e-5 ms/byte
-    # We approximate locations 1..num_remote as "edge"/"cloud" mixture; the CLI param determines count only.
     for a in locations:
         for b in locations:
             if a == b:
                 DR_rows.append([a, b, 0.0])
             else:
-                # Determine type of pair and sample accordingly
                 if a == 0 or b == 0:
-                    # pairs involving IoT
-                    # IoT<->Cloud should sometimes be very slow -> sample with some prob
-                    if random.random() < 0.12:  # 12% chance to simulate IoT-cloud very slow
-                        dr_val = random.uniform(1.5e-3, 3.0e-3)  # ~1500-3000 ms/MB
+                    if random.random() < 0.12:
+                        dr_val = random.uniform(1.5e-3, 3.0e-3)
                     else:
-                        dr_val = random.uniform(0.8e-5, 2.0e-5)  # ~8-20 ms/MB
+                        dr_val = random.uniform(0.8e-5, 2.0e-5)
                 else:
-                    # edge <-> edge / edge <-> cloud
-                    dr_val = random.uniform(3.0e-5, 6.0e-5)  # 30-60 ms/MB
+                    dr_val = random.uniform(3.0e-5, 6.0e-5)
                 DR_rows.append([int(a), int(b), float(dr_val)])
 
-    # DE (mJ/byte): IoT relatively expensive, edges cheaper, cloud cheapest
+    # DE (mJ/byte)
     for l in locations:
         if l == 0:
-            de_val = 1.20e-4  # match example IoT
+            de_val = 1.20e-4
         else:
             de_val = random.uniform(1.8e-5, 2.5e-5)
         DE_rows.append([int(l), float(de_val)])
 
-    # VR (ms/cycle) - time per cycle: IoT slowest, cloud fastest (example magnitudes)
+    # VR (ms/cycle)
     for l in locations:
         if l == 0:
             vr_val = 1.0e-7
         else:
-            # edges a bit faster, cloud fastest
             vr_val = random.uniform(1.0e-8, 4.0e-8)
         VR_rows.append([int(l), float(vr_val)])
 
-    # VE (mJ/cycle) - energy per cycle
+    # VE (mJ/cycle)
     for l in locations:
         if l == 0:
             ve_val = 6.0e-7
@@ -173,7 +153,7 @@ def make_instance_smallvalues(
             ve_val = random.uniform(1.2e-7, 3.0e-7)
         VE_rows.append([int(l), float(ve_val)])
 
-    # costs and mode — use the same magnitudes as your example defaults
+    # costs and mode
     costs = {"CT": 0.2, "CE": 1.20}
     mode = {"delta_t": 1, "delta_e": 1}
 
@@ -210,6 +190,17 @@ def generate_dataset(
         v = random.randint(min_v, max_v)
         s = seed + i
         inst = make_instance_smallvalues(v=v, edge_prob=edge_prob, num_remote=num_remote, seed=s)
+        # add primary keys
+        inst_id = str(uuid.uuid4())
+        inst_pk = i
+        inst["id"] = inst_id
+        inst["pk"] = inst_pk
+        # also add to meta for convenience
+        if "meta" not in inst:
+            inst["meta"] = {}
+        inst["meta"]["id"] = inst_id
+        inst["meta"]["pk"] = inst_pk
+
         dataset.append(inst)
     with open(out_file, "w") as fh:
         json.dump(dataset, fh, indent=2)
@@ -218,7 +209,7 @@ def generate_dataset(
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("--out", type=str, default="dataset.json")
-    p.add_argument("--count", type=int, default=100)
+    p.add_argument("--count", type=int, default=10)
     p.add_argument("--min_v", type=int, default=6)
     p.add_argument("--max_v", type=int, default=12)
     p.add_argument("--edge_prob", type=float, default=0.25)
