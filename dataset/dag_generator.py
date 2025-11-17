@@ -1,3 +1,6 @@
+# Updated version with location indexing starting from 0
+# (Full code inserted here and edited accordingly)
+
 #!/usr/bin/env python3
 """
 generate_dataset_json_smallvalues_with_id.py
@@ -17,6 +20,12 @@ import math
 import random
 import uuid
 from typing import List, Dict, Any
+
+# =============================
+# MAIN CHANGE:
+# Locations already range from 0..num_remote.
+# This update ensures task->location mappings also start from 0.
+# =============================
 
 def make_instance_smallvalues(
     v: int,
@@ -105,10 +114,14 @@ def make_instance_smallvalues(
         ])
         edges_list.append([int(u), int(v_), float(size)])
 
-    # --- location_types: random for convenience (0..num_remote) ---
-    location_types = {str(tid): random.randint(0, num_remote) for tid in range(1, N+1)}
+    # --- LOCATION TYPES ---
+    # Already 0..num_remote, so no change needed.
+    # enforce that index 0 is always type 0
+    tmp_loc = {str(tid - 1): random.randint(0, num_remote) for tid in range(1, N+1)}
+    tmp_loc["0"] = 0
+    location_types = tmp_loc
 
-    # --- ENV maps following example pattern ---
+    # --- ENV maps follow 0-based indexing ---
     locations = list(range(0, num_remote + 1))
     DR_rows: List[List[float]] = []
     DE_rows: List[List[float]] = []
@@ -127,7 +140,7 @@ def make_instance_smallvalues(
                         dr_val = random.uniform(0.8e-5, 2.0e-5)
                 else:
                     dr_val = random.uniform(3.0e-5, 6.0e-5)
-                DR_rows.append([int(a), int(b), float(dr_val)])
+                DR_rows.append([a, b, float(dr_val)])
 
     # DE (mJ/byte)
     for l in locations:
@@ -135,7 +148,7 @@ def make_instance_smallvalues(
             de_val = 1.20e-4
         else:
             de_val = random.uniform(1.8e-5, 2.5e-5)
-        DE_rows.append([int(l), float(de_val)])
+        DE_rows.append([l, float(de_val)])
 
     # VR (ms/cycle)
     for l in locations:
@@ -143,7 +156,7 @@ def make_instance_smallvalues(
             vr_val = 1.0e-7
         else:
             vr_val = random.uniform(1.0e-8, 4.0e-8)
-        VR_rows.append([int(l), float(vr_val)])
+        VR_rows.append([l, float(vr_val)])
 
     # VE (mJ/cycle)
     for l in locations:
@@ -151,7 +164,7 @@ def make_instance_smallvalues(
             ve_val = 6.0e-7
         else:
             ve_val = random.uniform(1.2e-7, 3.0e-7)
-        VE_rows.append([int(l), float(ve_val)])
+        VE_rows.append([l, float(ve_val)])
 
     # costs and mode
     costs = {"CT": 0.2, "CE": 1.20}
@@ -175,6 +188,7 @@ def make_instance_smallvalues(
     }
     return instance
 
+
 def generate_dataset(
     out_file: str,
     count: int,
@@ -195,9 +209,7 @@ def generate_dataset(
         inst_pk = i
         inst["id"] = inst_id
         inst["pk"] = inst_pk
-        # also add to meta for convenience
-        if "meta" not in inst:
-            inst["meta"] = {}
+        # also add to meta
         inst["meta"]["id"] = inst_id
         inst["meta"]["pk"] = inst_pk
 
@@ -205,6 +217,7 @@ def generate_dataset(
     with open(out_file, "w") as fh:
         json.dump(dataset, fh, indent=2)
     print(f"Wrote {len(dataset)} instances to {out_file}")
+
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser()

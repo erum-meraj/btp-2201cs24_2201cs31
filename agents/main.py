@@ -1,4 +1,4 @@
-# main.py - UPDATED: moved per-object evaluation into calculate_experiment() and iterate over dataset
+# main.py - FIXED: Ensure location 0 (IoT device) always exists
 import os, json, dotenv
 from datetime import datetime
 from langgraph.graph import StateGraph, END, START
@@ -197,6 +197,7 @@ def create_environment_dict(
 def parse_dataset_object(dataset_obj: dict) -> Tuple[dict, dict, dict, dict]:
     """
     Parse a dataset object from JSON and convert it to the format expected by the program.
+    FIXED: Ensures location 0 (IoT device) always exists.
     
     Args:
         dataset_obj: Single object from dataset.json
@@ -227,6 +228,14 @@ def parse_dataset_object(dataset_obj: dict) -> Tuple[dict, dict, dict, dict]:
     type_mapping = {0: "iot", 1: "edge", 2: "cloud"}
     locations_types = {loc: type_mapping[type_num] for loc, type_num in location_types_raw.items()}
     
+    # FIX: Always ensure location 0 exists and is of type 'iot'
+    if 0 not in locations_types:
+        locations_types[0] = "iot"
+        print("⚠ Warning: Location 0 (IoT device) was missing. Added automatically.")
+    elif locations_types[0] != "iot":
+        print(f"⚠ Warning: Location 0 was type '{locations_types[0]}'. Changed to 'iot'.")
+        locations_types[0] = "iot"
+    
     # ======================== PARSE ENVIRONMENT ========================
     env_data = dataset_obj['env']
     
@@ -244,6 +253,21 @@ def parse_dataset_object(dataset_obj: dict) -> Tuple[dict, dict, dict, dict]:
     
     # Parse VE: [[0, 6e-07], [1, 2.780e-07], ...] -> {0: 6e-07, 1: 2.780e-07, ...}
     VE_map = {int(entry[0]): float(entry[1]) for entry in env_data['VE']}
+    
+    # FIX: Ensure location 0 has entries in all maps
+    if 0 not in DE_map:
+        DE_map[0] = 0.00012  # Default IoT data energy
+        print("⚠ Warning: DE(0) missing. Using default value 0.00012 mJ/byte")
+    if 0 not in VR_map:
+        VR_map[0] = 1e-07  # Default IoT computation speed
+        print("⚠ Warning: VR(0) missing. Using default value 1e-07 ms/cycle")
+    if 0 not in VE_map:
+        VE_map[0] = 6e-07  # Default IoT task energy
+        print("⚠ Warning: VE(0) missing. Using default value 6e-07 mJ/cycle")
+    
+    # Ensure DR entries for location 0
+    if (0, 0) not in DR_map:
+        DR_map[(0, 0)] = 0.0
     
     # Create environment dictionary
     env_dict = create_environment_dict(
@@ -267,7 +291,7 @@ def parse_dataset_object(dataset_obj: dict) -> Tuple[dict, dict, dict, dict]:
     
     return workflow_dict, locations_types, env_dict, params
 
-def load_dataset(json_file: str = "dataset.json") -> List[dict]:
+def load_dataset(json_file: str = "dataset/dataset.json") -> List[dict]:
     """Load all dataset objects from JSON file."""
     with open(json_file, 'r') as f:
         return json.load(f)
@@ -355,8 +379,8 @@ if __name__ == "__main__":
     # LOAD DATASET FROM JSON
     # ========================================================================
     
-    print("Loading dataset from dataset.json...")
-    dataset = load_dataset("dataset.json")
+    print("Loading dataset from dataset/dataset.json...")
+    dataset = load_dataset("dataset/dataset.json")
     print(f"Loaded {len(dataset)} experiment configurations\n")
     threshold = 2
     # Iterate over all objects and evaluate each using the new calculate_experiment()
