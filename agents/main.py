@@ -1,4 +1,4 @@
-# main.py - UPDATED with correct experiment initialization
+# main.py - UPDATED: moved per-object evaluation into calculate_experiment() and iterate over dataset
 import os, json, dotenv
 from datetime import datetime
 from langgraph.graph import StateGraph, END, START
@@ -194,61 +194,56 @@ def create_environment_dict(
         "VE": VE_map
     }
 
-if __name__ == "__main__":
-    # ========================================================================
-    # EXPERIMENT SETUP: Define workflow, environment, and optimization params
-    # ========================================================================
+def parse_dataset_object(dataset_obj: dict) -> Tuple[dict, dict, dict, dict]:
+    """
+    Parse a dataset object from JSON and convert it to the format expected by the program.
     
-    # ------------------------ WORKFLOW DEFINITION ---------------------------
-    # Define workflow as per the paper's format
+    Args:
+        dataset_obj: Single object from dataset.json
+        
+    Returns:
+        Tuple of (workflow_dict, locations_types, env_dict, params)
+    """
+    # ======================== PARSE WORKFLOW ========================
+    workflow_data = dataset_obj['workflow']
+    
+    # Convert tasks: {1: {"v": 20420497.0}, ...} -> {1: {"v": 20420497.0}, ...}
+    tasks = {int(k): {"v": v["v"]} for k, v in workflow_data['tasks'].items()}
+    
+    # Convert edges: [[1, 2, 14239855.05], ...] -> {(1, 2): 14239855.05, ...}
+    edges = {(int(edge[0]), int(edge[1])): edge[2] for edge in workflow_data['edges']}
+    
     workflow_dict = {
-    "tasks": {
-        1: {"v": 2e6},    # light
-        2: {"v": 10e6},   # medium
-        3: {"v": 35e6},   # heavy
-        4: {"v": 18e6},   # medium
-        5: {"v": 28e6},   # heavy
-        6: {"v": 6e6},    # light
-    },
-    "edges": {
-        (1, 2): 15e6,     # 15 MB (big)
-        (2, 3): 0.8e6,    # 0.8 MB
-        (3, 4): 2e6,      # 2 MB
-        (4, 5): 1e6,      # 1 MB
-        (5, 6): 0.6e6,    # 0.6 MB
-    },
-    "N": 6,
-}
-
+        "tasks": tasks,
+        "edges": edges,
+        "N": workflow_data['N']
+    }
     
-    # Create Workflow object from experiment dict
-    wf = Workflow.from_experiment_dict(workflow_dict)
+    # ======================== PARSE LOCATION TYPES ========================
+    # location_types: {1: 2, 2: 2, 3: 1, ...} where 0=iot, 1=edge, 2=cloud
+    location_types_raw = {int(k): int(v) for k, v in dataset_obj['location_types'].items()}
     
-    # ------------------------ ENVIRONMENT DEFINITION ------------------------
-    # Define location types: 0=IoT (mandatory), 1+=edge/cloud
-    locations_types = {0: "iot", 1: "edge", 2: "edge", 3: "cloud"}
+    # Map numeric types to string types
+    type_mapping = {0: "iot", 1: "edge", 2: "cloud"}
+    locations_types = {loc: type_mapping[type_num] for loc, type_num in location_types_raw.items()}
     
-    # DR: Data Time Consumption (ms/byte) - time to transfer 1 byte between locations
-    DR_map = {
-    (0,0):0.0, (1,1):0.0, (2,2):0.0, (3,3):0.0,
-    (0,1):1.0e-05, (1,0):1.0e-05,   # IoT <-> Edge-A: 10 ms/MB
-    (0,2):1.5e-05, (2,0):1.5e-05,   # IoT <-> Edge-B: 15 ms/MB
-    (0,3):2.0e-03, (3,0):2.0e-03,   # IoT <-> Cloud: 2000 ms/MB (slow)
-    (1,2):4.0e-05, (2,1):4.0e-05,   # Edge-A <-> Edge-B: 40 ms/MB
-    (1,3):6.0e-05, (3,1):6.0e-05,   # Edge-A <-> Cloud: 60 ms/MB
-    (2,3):3.0e-05, (3,2):3.0e-05,   # Edge-B <-> Cloud: 30 ms/MB (fastest edge↔cloud)
-}
-
-
+    # ======================== PARSE ENVIRONMENT ========================
+    env_data = dataset_obj['env']
     
-    # DE: Data Energy Consumption (mJ/byte) - energy to process 1 byte at location
-    DE_map = {0: 1.20e-4, 1: 2.50e-5, 2: 2.20e-5, 3: 1.80e-5}
+    # Parse DR: [[0, 0, 0.0], [0, 1, 9.834e-06], ...] -> {(0, 0): 0.0, (0, 1): 9.834e-06, ...}
+    DR_map = {}
+    for entry in env_data['DR']:
+        src, dst, rate = entry
+        DR_map[(int(src), int(dst))] = float(rate)
     
-    # VR: Task Time Consumption (ms/cycle) - time to execute 1 CPU cycle
-    VR_map = {0: 1.0e-7, 1: 3.0e-8, 2: 2.0e-8, 3: 1.0e-8}
+    # Parse DE: [[0, 0.00012], [1, 2.415e-05], ...] -> {0: 0.00012, 1: 2.415e-05, ...}
+    DE_map = {int(entry[0]): float(entry[1]) for entry in env_data['DE']}
     
-    # VE: Task Energy Consumption (mJ/cycle) - energy per CPU cycle
-    VE_map = {0: 6.0e-7, 1: 3.0e-7, 2: 2.0e-7, 3: 1.2e-7}
+    # Parse VR: [[0, 1e-07], [1, 1.923e-08], ...] -> {0: 1e-07, 1: 1.923e-08, ...}
+    VR_map = {int(entry[0]): float(entry[1]) for entry in env_data['VR']}
+    
+    # Parse VE: [[0, 6e-07], [1, 2.780e-07], ...] -> {0: 6e-07, 1: 2.780e-07, ...}
+    VE_map = {int(entry[0]): float(entry[1]) for entry in env_data['VE']}
     
     # Create environment dictionary
     env_dict = create_environment_dict(
@@ -259,46 +254,65 @@ if __name__ == "__main__":
         VE_map=VE_map
     )
     
+    # ======================== PARSE PARAMETERS ========================
+    costs = dataset_obj['costs']
+    mode = dataset_obj['mode']
+    
+    params = {
+        "CT": costs['CT'],
+        "CE": costs['CE'],
+        "delta_t": mode['delta_t'],
+        "delta_e": mode['delta_e']
+    }
+    
+    return workflow_dict, locations_types, env_dict, params
+
+def load_dataset(json_file: str = "dataset.json") -> List[dict]:
+    """Load all dataset objects from JSON file."""
+    with open(json_file, 'r') as f:
+        return json.load(f)
+
+
+def calculate_experiment(dataset_obj: dict, experiment_index: int):
+    """
+    Calculate (evaluate) a single dataset object. This function extracts the
+    workflow/environment/params, constructs the Workflow and Environment
+    objects, runs the agentic workflow, and prints the results. Uses existing
+    helper functions and keeps behavior unchanged.
+    """
+    print(f"Running experiment {experiment_index} (ID: {dataset_obj['id']})")
+    print(f"Seed: {dataset_obj['meta']['seed']}")
+    print(f"Tasks: {dataset_obj['meta']['v']}, Edges: {dataset_obj['meta']['edgecount']}\n")
+
+    # PARSE DATASET OBJECT
+    workflow_dict, locations_types, env_dict, params = parse_dataset_object(dataset_obj)
+    
+    # Create Workflow object
+    wf = Workflow.from_experiment_dict(workflow_dict)
+    
     # Create Environment object
     env = Environment.from_matrices(
         types=locations_types,
-        DR_matrix=DR_map,
-        DE_vector=DE_map,
-        VR_vector=VR_map,
-        VE_vector=VE_map
+        DR_matrix=env_dict["DR"],
+        DE_vector=env_dict["DE"],
+        VR_vector=env_dict["VR"],
+        VE_vector=env_dict["VE"]
     )
-    
-    # ------------------------ OPTIMIZATION PARAMETERS -----------------------
-    # Cost coefficients and mode as per the paper
-    params = {
-    "CT": 0.2,       # Cost per unit time (Eq. 1)
-    "CE": 1.20,      # Cost per unit energy (Eq. 2)
-    "delta_t": 1,    # Weight for time cost (1=enabled, 0=disabled)
-    "delta_e": 1,    # Weight for energy cost (1=enabled, 0=disabled)
-    "fixed_locations": {1: 0},  # Task 1 fixed on IoT
-}
-    # Note: delta_t=1, delta_e=1 → Balanced Mode
-    #       delta_t=1, delta_e=0 → Low Latency Mode
-    #       delta_t=0, delta_e=1 → Low Power Mode
-    
-    # ========================================================================
+
     # RUN AGENTIC WORKFLOW
-    # ========================================================================
-    
+    log_file = f"agent_trace_exp_{experiment_index}.txt"
+
     result = run_workflow(
         "Find optimal offloading policy for this edge-cloud task offloading scenario", 
         {
-            "env": env_dict,  # Pass environment as dict
-            "workflow": wf.to_experiment_dict(),  # Pass workflow as dict
+            "env": env_dict,
+            "workflow": wf.to_experiment_dict(),
             "params": params
         },
-        log_file="agent_trace_detailed.txt"
+        log_file=log_file
     )
 
-    # ========================================================================
-    # DISPLAY RESULTS
-    # ========================================================================
-    
+    # DISPLAY RESULTS (keeps same output format)
     print("\n" + "="*80)
     print("FINAL RESULT:")
     print("="*80)
@@ -319,8 +333,9 @@ if __name__ == "__main__":
                 print(f"  Task {i} → Location {location} ({loc_type.capitalize()} Server)")
     else:
         print("No optimal policy found.")
-    
+
     print("\n" + "="*80)
+    print(f"Experiment ID: {dataset_obj['id']}")
     print(f"Number of Edge Servers (E): {env.E}")
     print(f"Number of Cloud Servers (C): {env.C}")
     print(f"Total Tasks (N): {wf.N}")
@@ -332,3 +347,29 @@ if __name__ == "__main__":
     elif params["delta_t"] == 0 and params["delta_e"] == 1:
         print("Low Power (Energy Only)")
     print("="*80)
+
+    return result
+
+if __name__ == "__main__":
+    # ========================================================================
+    # LOAD DATASET FROM JSON
+    # ========================================================================
+    
+    print("Loading dataset from dataset.json...")
+    dataset = load_dataset("dataset.json")
+    print(f"Loaded {len(dataset)} experiment configurations\n")
+    threshold = 2
+    # Iterate over all objects and evaluate each using the new calculate_experiment()
+    for idx, dataset_obj in enumerate(dataset):
+        if not threshold:
+            break
+        threshold -= 1
+        print(f"\n{'='*80}")
+        print(f"Evaluating dataset object {idx}/{len(dataset)-1}")
+        print(f"{'='*80}\n")
+        try:
+            calculate_experiment(dataset_obj, idx)
+        except Exception as e:
+            print(f"Error while processing experiment {idx} (ID: {dataset_obj.get('id', 'unknown')}): {e}")
+
+    print("\nAll experiments processed.")
