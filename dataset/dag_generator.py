@@ -222,7 +222,7 @@ def generate_dataset(
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("--out", type=str, default="dataset.json")
-    p.add_argument("--count", type=int, default=10)
+    p.add_argument("--count", type=int, default=100)
     p.add_argument("--min_v", type=int, default=6)
     p.add_argument("--max_v", type=int, default=12)
     p.add_argument("--edge_prob", type=float, default=0.25)
