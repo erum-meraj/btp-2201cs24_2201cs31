@@ -1,4 +1,4 @@
-# main.py - FIXED: Ensure location 0 (IoT device) always exists
+# main.py - UPDATED: Integrated memory system for learning across experiments
 import os, json, dotenv
 from datetime import datetime
 from langgraph.graph import StateGraph, END, START
@@ -8,6 +8,7 @@ from agents.output import OutputAgent
 from typing import TypedDict, Optional, List, Dict, Tuple
 from core.workflow import Workflow
 from core.environment import Environment, Location
+from core.memory_manager import WorkflowMemory
 
 dotenv.load_dotenv()
 GEMINI_API_KEY = os.getenv("GOOGLE_API_KEY")
@@ -21,6 +22,8 @@ class AgenticState(TypedDict, total=False):
     evaluation: Optional[str]
     output: Optional[dict]
     optimal_policy: Optional[List[int]]
+    experiment_id: Optional[str]
+    memory_manager: Optional[WorkflowMemory]
 
 def initialize_log_file(log_file: str, state_data: dict):
     """Initialize the log file with header and environment/workflow details."""
@@ -114,10 +117,10 @@ def initialize_log_file(log_file: str, state_data: dict):
         f.write("AGENT INTERACTIONS\n")
         f.write("="*80 + "\n\n")
 
-def build_agentic_workflow(log_file: str = "agent_trace.txt"):
+def build_agentic_workflow(log_file: str = "agent_trace.txt", memory_manager: WorkflowMemory = None):
     workflow = StateGraph(AgenticState)
 
-    planner = PlannerAgent(GEMINI_API_KEY, log_file=log_file) 
+    planner = PlannerAgent(GEMINI_API_KEY, log_file=log_file, memory_manager=memory_manager) 
     evaluator = EvaluatorAgent(GEMINI_API_KEY, log_file=log_file)
     output = OutputAgent(GEMINI_API_KEY, log_file=log_file)
 
@@ -134,17 +137,23 @@ def build_agentic_workflow(log_file: str = "agent_trace.txt"):
 
     return workflow.compile()
 
-def run_workflow(task_description: str, state_data: dict, log_file: str = "agent_trace.txt"):
+def run_workflow(task_description: str, state_data: dict, log_file: str = "agent_trace.txt",
+                memory_manager: WorkflowMemory = None):
     """
     state_data should include:
       - env: environment parameters (as dict with DR, DE, VR, VE)
       - workflow: workflow dict (tasks, edges, N)
       - params: optional evaluator parameters (CT, CE, delta_t, delta_e)
+      - experiment_id: unique identifier for this experiment
     """
     # Initialize log file with environment and workflow details
     initialize_log_file(log_file, state_data)
     
-    workflow = build_agentic_workflow(log_file)
+    workflow = build_agentic_workflow(log_file, memory_manager)
+    
+    # Add memory_manager to state so it can be used by agents
+    state_data['memory_manager'] = memory_manager
+    
     result = workflow.invoke({
         "query": task_description,
         **state_data  
@@ -162,7 +171,7 @@ def run_workflow(task_description: str, state_data: dict, log_file: str = "agent
         f.write("END OF TRACE\n")
         f.write("="*80 + "\n")
     
-    print(f"\n✓ Complete execution trace saved to: {log_file}")
+    print(f"\n✅ Complete execution trace saved to: {log_file}")
     
     return result
 
@@ -197,7 +206,7 @@ def create_environment_dict(
 def parse_dataset_object(dataset_obj: dict) -> Tuple[dict, dict, dict, dict]:
     """
     Parse a dataset object from JSON and convert it to the format expected by the program.
-    FIXED: Ensures location 0 (IoT device) always exists.
+    FIXED: Maps type-based environment parameters to all location instances.
     
     Args:
         dataset_obj: Single object from dataset.json
@@ -231,43 +240,82 @@ def parse_dataset_object(dataset_obj: dict) -> Tuple[dict, dict, dict, dict]:
     # FIX: Always ensure location 0 exists and is of type 'iot'
     if 0 not in locations_types:
         locations_types[0] = "iot"
-        print("⚠ Warning: Location 0 (IoT device) was missing. Added automatically.")
+        print("⚠️  Warning: Location 0 (IoT device) was missing. Added automatically.")
     elif locations_types[0] != "iot":
-        print(f"⚠ Warning: Location 0 was type '{locations_types[0]}'. Changed to 'iot'.")
+        print(f"⚠️  Warning: Location 0 was type '{locations_types[0]}'. Changed to 'iot'.")
         locations_types[0] = "iot"
     
     # ======================== PARSE ENVIRONMENT ========================
     env_data = dataset_obj['env']
     
     # Parse DR: [[0, 0, 0.0], [0, 1, 9.834e-06], ...] -> {(0, 0): 0.0, (0, 1): 9.834e-06, ...}
-    DR_map = {}
+    # NOTE: DR in dataset is indexed by location TYPE (0, 1, 2), not location ID
+    DR_type_map = {}
     for entry in env_data['DR']:
-        src, dst, rate = entry
-        DR_map[(int(src), int(dst))] = float(rate)
+        src_type, dst_type, rate = entry
+        DR_type_map[(int(src_type), int(dst_type))] = float(rate)
     
-    # Parse DE: [[0, 0.00012], [1, 2.415e-05], ...] -> {0: 0.00012, 1: 2.415e-05, ...}
-    DE_map = {int(entry[0]): float(entry[1]) for entry in env_data['DE']}
+    # Parse DE/VR/VE: These are indexed by location TYPE
+    DE_type_map = {int(entry[0]): float(entry[1]) for entry in env_data['DE']}
+    VR_type_map = {int(entry[0]): float(entry[1]) for entry in env_data['VR']}
+    VE_type_map = {int(entry[0]): float(entry[1]) for entry in env_data['VE']}
     
-    # Parse VR: [[0, 1e-07], [1, 1.923e-08], ...] -> {0: 1e-07, 1: 1.923e-08, ...}
-    VR_map = {int(entry[0]): float(entry[1]) for entry in env_data['VR']}
+    # ======================== MAP TYPE-BASED PARAMS TO LOCATION IDs ========================
+    # Create actual location-based maps by looking up each location's type
     
-    # Parse VE: [[0, 6e-07], [1, 2.780e-07], ...] -> {0: 6e-07, 1: 2.780e-07, ...}
-    VE_map = {int(entry[0]): float(entry[1]) for entry in env_data['VE']}
+    # DE_map: {location_id: energy} based on location type
+    DE_map = {}
+    for loc_id, loc_type_str in locations_types.items():
+        # Convert string type back to numeric for lookup
+        type_num = {"iot": 0, "edge": 1, "cloud": 2}[loc_type_str]
+        if type_num in DE_type_map:
+            DE_map[loc_id] = DE_type_map[type_num]
+        else:
+            # Fallback default
+            DE_map[loc_id] = 0.00012 if type_num == 0 else 2e-5
+            print(f"⚠️  Warning: DE for type {type_num} missing. Using fallback.")
     
-    # FIX: Ensure location 0 has entries in all maps
-    if 0 not in DE_map:
-        DE_map[0] = 0.00012  # Default IoT data energy
-        print("⚠ Warning: DE(0) missing. Using default value 0.00012 mJ/byte")
-    if 0 not in VR_map:
-        VR_map[0] = 1e-07  # Default IoT computation speed
-        print("⚠ Warning: VR(0) missing. Using default value 1e-07 ms/cycle")
-    if 0 not in VE_map:
-        VE_map[0] = 6e-07  # Default IoT task energy
-        print("⚠ Warning: VE(0) missing. Using default value 6e-07 mJ/cycle")
+    # VR_map: {location_id: time_per_cycle} based on location type
+    VR_map = {}
+    for loc_id, loc_type_str in locations_types.items():
+        type_num = {"iot": 0, "edge": 1, "cloud": 2}[loc_type_str]
+        if type_num in VR_type_map:
+            VR_map[loc_id] = VR_type_map[type_num]
+        else:
+            VR_map[loc_id] = 1e-7 if type_num == 0 else 2e-8
+            print(f"⚠️  Warning: VR for type {type_num} missing. Using fallback.")
     
-    # Ensure DR entries for location 0
-    if (0, 0) not in DR_map:
-        DR_map[(0, 0)] = 0.0
+    # VE_map: {location_id: energy_per_cycle} based on location type
+    VE_map = {}
+    for loc_id, loc_type_str in locations_types.items():
+        type_num = {"iot": 0, "edge": 1, "cloud": 2}[loc_type_str]
+        if type_num in VE_type_map:
+            VE_map[loc_id] = VE_type_map[type_num]
+        else:
+            VE_map[loc_id] = 6e-7 if type_num == 0 else 2.5e-7
+            print(f"⚠️  Warning: VE for type {type_num} missing. Using fallback.")
+    
+    # DR_map: {(loc_i, loc_j): rate} based on location types
+    # For each pair of locations, look up their types and get the DR value
+    DR_map = {}
+    all_location_ids = sorted(locations_types.keys())
+    
+    for src_id in all_location_ids:
+        for dst_id in all_location_ids:
+            src_type_str = locations_types[src_id]
+            dst_type_str = locations_types[dst_id]
+            
+            src_type_num = {"iot": 0, "edge": 1, "cloud": 2}[src_type_str]
+            dst_type_num = {"iot": 0, "edge": 1, "cloud": 2}[dst_type_str]
+            
+            if (src_type_num, dst_type_num) in DR_type_map:
+                DR_map[(src_id, dst_id)] = DR_type_map[(src_type_num, dst_type_num)]
+            elif src_id == dst_id:
+                DR_map[(src_id, dst_id)] = 0.0  # Self-loop is always 0
+            else:
+                # Fallback: use a default inter-location rate
+                DR_map[(src_id, dst_id)] = 1e-5
+                print(f"⚠️  Warning: DR({src_type_num}, {dst_type_num}) missing. Using fallback.")
     
     # Create environment dictionary
     env_dict = create_environment_dict(
@@ -297,14 +345,15 @@ def load_dataset(json_file: str = "dataset/dataset.json") -> List[dict]:
         return json.load(f)
 
 
-def calculate_experiment(dataset_obj: dict, experiment_index: int):
+def calculate_experiment(dataset_obj: dict, experiment_index: int, memory_manager: WorkflowMemory):
     """
-    Calculate (evaluate) a single dataset object. This function extracts the
-    workflow/environment/params, constructs the Workflow and Environment
-    objects, runs the agentic workflow, and prints the results. Uses existing
-    helper functions and keeps behavior unchanged.
+    Calculate (evaluate) a single dataset object with memory integration.
     """
-    print(f"Running experiment {experiment_index} (ID: {dataset_obj['id']})")
+    experiment_id = dataset_obj.get('id', f'exp_{experiment_index}')
+    
+    print(f"\n{'='*80}")
+    print(f"Running experiment {experiment_index} (ID: {experiment_id})")
+    print(f"{'='*80}")
     print(f"Seed: {dataset_obj['meta']['seed']}")
     print(f"Tasks: {dataset_obj['meta']['v']}, Edges: {dataset_obj['meta']['edgecount']}\n")
 
@@ -331,12 +380,52 @@ def calculate_experiment(dataset_obj: dict, experiment_index: int):
         {
             "env": env_dict,
             "workflow": wf.to_experiment_dict(),
-            "params": params
+            "params": params,
+            "experiment_id": experiment_id
         },
-        log_file=log_file
+        log_file=log_file,
+        memory_manager=memory_manager
     )
 
-    # DISPLAY RESULTS (keeps same output format)
+    # SAVE TO MEMORY
+    optimal_policy = result.get("optimal_policy", [])
+    evaluation_str = result.get("evaluation", "")
+    plan = result.get("plan", "")
+    
+    # Extract evaluation result details
+    evaluation_result = {
+        "best_policy": optimal_policy,
+        "best_cost": None,
+        "evaluated": 0,
+        "skipped": 0
+    }
+    
+    # Parse evaluation string to extract metrics
+    import re
+    cost_match = re.search(r'U\(w,p\*\)\s*=\s*([\d.]+)', evaluation_str)
+    if cost_match:
+        evaluation_result["best_cost"] = float(cost_match.group(1))
+    
+    evaluated_match = re.search(r'Evaluated:\s*(\d+)', evaluation_str)
+    if evaluated_match:
+        evaluation_result["evaluated"] = int(evaluated_match.group(1))
+    
+    skipped_match = re.search(r'Skipped:\s*(\d+)', evaluation_str)
+    if skipped_match:
+        evaluation_result["skipped"] = int(skipped_match.group(1))
+    
+    # Save execution to memory
+    memory_manager.save_execution(
+        workflow_dict=workflow_dict,
+        env_dict=env_dict,
+        params=params,
+        optimal_policy=optimal_policy,
+        evaluation_result=evaluation_result,
+        plan=plan,
+        experiment_id=experiment_id
+    )
+
+    # DISPLAY RESULTS
     print("\n" + "="*80)
     print("FINAL RESULT:")
     print("="*80)
@@ -345,7 +434,6 @@ def calculate_experiment(dataset_obj: dict, experiment_index: int):
     print("\n" + "="*80)
     print("OPTIMAL POLICY:")
     print("="*80)
-    optimal_policy = result.get("optimal_policy", [])
     if optimal_policy:
         print(f"Policy vector p = {optimal_policy}")
         print("\nTask Assignments:")
@@ -359,7 +447,7 @@ def calculate_experiment(dataset_obj: dict, experiment_index: int):
         print("No optimal policy found.")
 
     print("\n" + "="*80)
-    print(f"Experiment ID: {dataset_obj['id']}")
+    print(f"Experiment ID: {experiment_id}")
     print(f"Number of Edge Servers (E): {env.E}")
     print(f"Number of Cloud Servers (C): {env.C}")
     print(f"Total Tasks (N): {wf.N}")
@@ -376,24 +464,41 @@ def calculate_experiment(dataset_obj: dict, experiment_index: int):
 
 if __name__ == "__main__":
     # ========================================================================
+    # INITIALIZE MEMORY SYSTEM
+    # ========================================================================
+    
+    print("🧠 Initializing Memory System...")
+    memory_manager = WorkflowMemory(memory_dir="memory_store")
+    print(f"   Memory directory: {memory_manager.memory_dir}")
+    
+    # ========================================================================
     # LOAD DATASET FROM JSON
     # ========================================================================
     
-    print("Loading dataset from dataset/dataset.json...")
+    print("\n📂 Loading dataset from dataset/dataset.json...")
     dataset = load_dataset("dataset/dataset.json")
-    print(f"Loaded {len(dataset)} experiment configurations\n")
-    threshold = 2
-    # Iterate over all objects and evaluate each using the new calculate_experiment()
+    print(f"   Loaded {len(dataset)} experiment configurations\n")
+    
+    # Limit number of experiments for testing (set to None to run all)
+    threshold = 5
+    
+    # Iterate over all objects and evaluate each
     for idx, dataset_obj in enumerate(dataset):
-        if not threshold:
+        if threshold is not None and threshold <= 0:
             break
-        threshold -= 1
-        print(f"\n{'='*80}")
-        print(f"Evaluating dataset object {idx}/{len(dataset)-1}")
-        print(f"{'='*80}\n")
+        
         try:
-            calculate_experiment(dataset_obj, idx)
+            calculate_experiment(dataset_obj, idx, memory_manager)
+            
+            if threshold is not None:
+                threshold -= 1
+                
         except Exception as e:
             print(f"Error while processing experiment {idx} (ID: {dataset_obj.get('id', 'unknown')}): {e}")
+            import traceback
+            traceback.print_exc()
 
-    print("\nAll experiments processed.")
+    print("\n" + "="*80)
+    print("All experiments processed.")
+    print(f"Memory stored in: {memory_manager.memory_dir}")
+    print("="*80)

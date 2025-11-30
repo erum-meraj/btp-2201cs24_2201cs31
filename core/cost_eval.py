@@ -163,7 +163,12 @@ class UtilityEvaluator:
         Ki = workflow.Ki()  # children of each node
         vertices = workflow.vertices()
         
-        order = topological_sort()
+        # FIXED: Pass adjacency list to topological_sort
+        order = topological_sort(Ki)
+        
+        if order is None:
+            # Graph has a cycle, return infinite cost
+            return float('inf')
         
         # Initialize distances
         dist = {v: float('-inf') for v in vertices}
@@ -177,6 +182,7 @@ class UtilityEvaluator:
             for v in Ki.get(u, []):
                 # Compute edge weight using placement
                 if u == 0:
+                    # Entry node: no execution cost, only data transfer
                     w_uv = 0.0 
                 elif v == workflow.N + 1:
                     # Exit node: only include task u execution and data transfer

@@ -1,0 +1,57 @@
+{
+  "experiment_id": "b97db6db-fa3a-4966-92eb-12035fec2cfc",
+  "timestamp": "2025-11-30T15:23:35.329941",
+  "workflow_features": {
+    "N": 6,
+    "v_mean": 15470526.166666666,
+    "v_std": 9726138.632100072,
+    "v_max": 30129819.0,
+    "v_min": 4873396.0,
+    "edge_count": 5,
+    "edge_density": 0.16666666666666666,
+    "d_mean": 2125530.6302547646,
+    "d_std": 1102565.0794046558,
+    "d_max": 4236488.520046897,
+    "d_min": 1075158.9252191759,
+    "nodes_linear": 1,
+    "nodes_source": 2,
+    "nodes_sink": 2,
+    "critical_path_length": 0
+  },
+  "environment_features": {
+    "location_count": 6,
+    "iot_count": 3,
+    "edge_count": 0,
+    "cloud_count": 3,
+    "dr_mean": 0.000597382589340566,
+    "dr_std": 0.000904699445076875,
+    "dr_max": 0.001979313109629943,
+    "dr_min": 0.0,
+    "de_mean": 7.154900902994743e-05,
+    "de_std": 4.8450990970052563e-05,
+    "vr_mean": 5.6055266741943475e-08,
+    "vr_std": 4.394473325805652e-08,
+    "ve_mean": 4.196390576675323e-07,
+    "ve_std": 1.8036094233246767e-07,
+    "regime": "network-bound"
+  },
+  "params": {
+    "CT": 0.2,
+    "CE": 1.2,
+    "delta_t": 1,
+    "delta_e": 1
+  },
+  "optimal_policy": [
+    1,
+    2,
+    1,
+    5,
+    1,
+    2
+  ],
+  "best_cost": 615.961298,
+  "evaluated_policies": 0,
+  "skipped_policies": 0,
+  "summary": "Workflow: 6 tasks\n  - Avg compute: 1.55e+07 cycles (std: 9.73e+06)\n  - Edge density: 16.67% (5 edges)\n  - Avg data dependency: 2.13e+06 bytes\n  - Critical path length: ~0 hops\n  - Structure: Mixed topology\nEnvironment: 6 locations\n  - 0 edge, 3 cloud servers\n  - Avg network latency: 5.97e-04 ms/byte\n  - Avg compute speed: 5.61e-08 ms/cycle\n  - Avg task energy: 4.20e-07 mJ/cycle\n  - Regime: network-bound\nMode: BALANCED",
+  "plan_excerpt": "\n## Chain-of-Thought Reasoning:\nThe Planner Agent's goal is to develop a comprehensive plan for optimizing task offloading in the given edge-cloud environment. This plan will guide an evaluator agent in determining the optimal placement policy `p = [l_1, l_2, ..., l_N]`. I will follow a Chain-of-Thought approach, breaking down the problem into the specified sections: Environment Analysis, Workflow DAG Analysis, Cost Components, Mode-Specific Strategy, and Placement Strategy Recommendations.\n\n**1"
+}

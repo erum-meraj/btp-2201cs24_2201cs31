@@ -105,7 +105,7 @@ class Environment:
         """
         Build an Environment directly from {DR, DE, VR, VE} definitions.
 
-        All units should match the paper:
+        All units matching the paper:
           DR(ms/byte), DE(mJ/byte), VR(ms/cycle), VE(mJ/cycle)
         """
         locations = {l: Location(l=l, type=types.get(l, "edge")) for l in types}

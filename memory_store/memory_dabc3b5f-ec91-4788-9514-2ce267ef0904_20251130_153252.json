@@ -1,0 +1,60 @@
+{
+  "experiment_id": "dabc3b5f-ec91-4788-9514-2ce267ef0904",
+  "timestamp": "2025-11-30T15:32:52.185378",
+  "workflow_features": {
+    "N": 9,
+    "v_mean": 17136285.111111112,
+    "v_std": 9611575.804554116,
+    "v_max": 34063211.0,
+    "v_min": 2134075.0,
+    "edge_count": 9,
+    "edge_density": 0.125,
+    "d_mean": 5744409.46000232,
+    "d_std": 5001549.051181884,
+    "d_max": 13590287.671848515,
+    "d_min": 510038.01541146485,
+    "nodes_linear": 1,
+    "nodes_source": 3,
+    "nodes_sink": 3,
+    "critical_path_length": 0
+  },
+  "environment_features": {
+    "location_count": 9,
+    "iot_count": 5,
+    "edge_count": 2,
+    "cloud_count": 2,
+    "dr_mean": 0.00036325069625322323,
+    "dr_std": 0.0008737879342608723,
+    "dr_max": 0.0025387222111106717,
+    "dr_min": 0.0,
+    "de_mean": 7.739895657311782e-05,
+    "de_std": 4.762952661410203e-05,
+    "vr_mean": 6.618047750073587e-08,
+    "vr_std": 3.799419412960116e-08,
+    "ve_mean": 4.5271322343133207e-07,
+    "ve_std": 1.648238870026698e-07,
+    "regime": "network-bound"
+  },
+  "params": {
+    "CT": 0.2,
+    "CE": 1.2,
+    "delta_t": 1,
+    "delta_e": 1
+  },
+  "optimal_policy": [
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4
+  ],
+  "best_cost": 3025.156116,
+  "evaluated_policies": 0,
+  "skipped_policies": 0,
+  "summary": "Workflow: 9 tasks\n  - Avg compute: 1.71e+07 cycles (std: 9.61e+06)\n  - Edge density: 12.50% (9 edges)\n  - Avg data dependency: 5.74e+06 bytes\n  - Critical path length: ~0 hops\n  - Structure: Multiple sources/sinks (parallel)\nEnvironment: 9 locations\n  - 2 edge, 2 cloud servers\n  - Avg network latency: 3.63e-04 ms/byte\n  - Avg compute speed: 6.62e-08 ms/cycle\n  - Avg task energy: 4.53e-07 mJ/cycle\n  - Regime: network-bound\nMode: BALANCED",
+  "plan_excerpt": "\n## Chain-of-Thought Reasoning:\nThe Planner Agent's goal is to develop a comprehensive plan for optimizing task offloading in the given edge-cloud environment, guiding an evaluator agent to find the optimal placement policy `p = [l_1, l_2, ..., l_N]`. The objective is to minimize the total cost `U(w,p)` in BALANCED mode, which means optimizing both time and energy.\n\n**1. Problem Analysis and Constraints:**\n\n*   **Objective Function**: `U(w,p) = delta_t * T + delta_e * E`.\n    *   `delta_t = 1`, "
+}

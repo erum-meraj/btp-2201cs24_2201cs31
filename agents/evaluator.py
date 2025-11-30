@@ -1,4 +1,4 @@
-# agents/evaluator.py - FIXED: (1) real location IDs, (2) constraints enforcement
+# agents/evaluator.py - FIXED: String key handling for constraints
 import itertools
 import math
 from core.workflow import Workflow
@@ -187,22 +187,58 @@ Provide candidate policies as lists: [l_1, l_2, ..., l_{N}]
                 f.write(response)
                 f.write("\n" + "="*80 + "\n\n")
 
-    # FIX(2): constraints helper
+    # FIX(2): constraints helper with proper key type handling
     @staticmethod
     def _violates_constraints(policy_tuple, fixed, allowed):
         """
-        fixed:   {task_id -> required_location_id}
-        allowed: {task_id -> iterable-of-allowed-location-ids}
+        Check if policy violates constraints.
+        
+        Args:
+            policy_tuple: tuple of location assignments (l_1, l_2, ..., l_N)
+            fixed: {task_id -> required_location_id} where task_id can be int or str
+            allowed: {task_id -> iterable-of-allowed-location-ids} where task_id can be int or str
+        
+        Returns:
+            True if policy violates constraints, False otherwise
         """
         N = len(policy_tuple)
+        
+        # Normalize fixed constraints (convert string keys to int)
         if fixed:
+            normalized_fixed = {}
             for t, loc in fixed.items():
-                if 1 <= t <= N and policy_tuple[t - 1] != loc:
-                    return True
+                try:
+                    task_id = int(t) if isinstance(t, str) else t
+                    normalized_fixed[task_id] = int(loc)
+                except (ValueError, TypeError):
+                    print(f"⚠️  Warning: Invalid fixed constraint: {t} -> {loc}")
+                    continue
+            
+            # Check fixed constraints
+            for task_id, required_loc in normalized_fixed.items():
+                if 1 <= task_id <= N:
+                    actual_loc = policy_tuple[task_id - 1]
+                    if actual_loc != required_loc:
+                        return True
+        
+        # Normalize allowed constraints (convert string keys to int)
         if allowed:
-            for t, allowed_set in allowed.items():
-                if 1 <= t <= N and policy_tuple[t - 1] not in set(allowed_set):
-                    return True
+            normalized_allowed = {}
+            for t, allowed_locs in allowed.items():
+                try:
+                    task_id = int(t) if isinstance(t, str) else t
+                    normalized_allowed[task_id] = set(int(loc) for loc in allowed_locs)
+                except (ValueError, TypeError):
+                    print(f"⚠️  Warning: Invalid allowed constraint: {t} -> {allowed_locs}")
+                    continue
+            
+            # Check allowed constraints
+            for task_id, allowed_set in normalized_allowed.items():
+                if 1 <= task_id <= N:
+                    actual_loc = policy_tuple[task_id - 1]
+                    if actual_loc not in allowed_set:
+                        return True
+        
         return False
 
     def find_best_policy(self, workflow_dict: dict, env_dict: dict, params: dict, plan: str = ""):
@@ -235,6 +271,15 @@ Provide candidate policies as lists: [l_1, l_2, ..., l_{N}]
         print(f"  Locations: {n_locations} with IDs {location_ids}")
         print(f"  Cost Model: U(w,p) = {delta_t}*T + {delta_e}*E")
         print(f"  CT={CT}, CE={CE}")
+        
+        # Display constraints if any
+        fixed = params.get("fixed_locations", {})
+        allowed = params.get("allowed_locations", None)
+        if fixed:
+            print(f"  Fixed Constraints: {fixed}")
+        if allowed:
+            print(f"  Allowed Constraints: {allowed}")
+        
         print(f"{'='*60}\n")
 
         # LLM-guided candidates
@@ -262,7 +307,7 @@ Provide candidate policies as lists: [l_1, l_2, ..., l_{N}]
             all_candidates = list(itertools.product(location_ids, repeat=N))
             candidates = list(set(candidates + all_candidates))
         else:
-            print(f"⚠ Problem too large for exhaustive search ({total_combos} combinations)")
+            print(f"⚠  Problem too large for exhaustive search ({total_combos} combinations)")
             print(f"  Using {len(candidates)} LLM-guided + heuristic candidates")
 
         # FIX(2): read constraints
@@ -293,8 +338,9 @@ Provide candidate policies as lists: [l_1, l_2, ..., l_{N}]
                     best_cost = cost
                     best_policy = placement_tuple
                     print(f"  ✓ New best: {best_policy} with U(w,p) = {best_cost:.6f}")
-            except Exception:
+            except Exception as e:
                 skipped += 1
+                print(f"  ⚠️  Error evaluating {placement_tuple}: {e}")
                 continue
 
         return {

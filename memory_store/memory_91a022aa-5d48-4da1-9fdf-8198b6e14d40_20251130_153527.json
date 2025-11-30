@@ -1,0 +1,58 @@
+{
+  "experiment_id": "91a022aa-5d48-4da1-9fdf-8198b6e14d40",
+  "timestamp": "2025-11-30T15:35:27.077857",
+  "workflow_features": {
+    "N": 7,
+    "v_mean": 24636420.57142857,
+    "v_std": 10463988.56695876,
+    "v_max": 33127991.0,
+    "v_min": 5987513.0,
+    "edge_count": 7,
+    "edge_density": 0.16666666666666666,
+    "d_mean": 2066323.7050856303,
+    "d_std": 1099881.0330362795,
+    "d_max": 4389471.563894321,
+    "d_min": 836627.8000665624,
+    "nodes_linear": 0,
+    "nodes_source": 3,
+    "nodes_sink": 2,
+    "critical_path_length": 0
+  },
+  "environment_features": {
+    "location_count": 7,
+    "iot_count": 1,
+    "edge_count": 1,
+    "cloud_count": 5,
+    "dr_mean": 1.6701305494608416e-05,
+    "dr_std": 2.0738876498918367e-05,
+    "dr_max": 5.6017089776883155e-05,
+    "dr_min": 0.0,
+    "de_mean": 3.6281034721776703e-05,
+    "de_std": 3.418375704603129e-05,
+    "vr_mean": 3.8039886268238286e-08,
+    "vr_std": 2.570265050842027e-08,
+    "ve_mean": 2.3271440721379109e-07,
+    "ve_std": 1.5352958987665937e-07,
+    "regime": "balanced"
+  },
+  "params": {
+    "CT": 0.2,
+    "CE": 1.2,
+    "delta_t": 1,
+    "delta_e": 1
+  },
+  "optimal_policy": [
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1
+  ],
+  "best_cost": 775.741837,
+  "evaluated_policies": 0,
+  "skipped_policies": 0,
+  "summary": "Workflow: 7 tasks\n  - Avg compute: 2.46e+07 cycles (std: 1.05e+07)\n  - Edge density: 16.67% (7 edges)\n  - Avg data dependency: 2.07e+06 bytes\n  - Critical path length: ~0 hops\n  - Structure: Mixed topology\nEnvironment: 7 locations\n  - 1 edge, 5 cloud servers\n  - Avg network latency: 1.67e-05 ms/byte\n  - Avg compute speed: 3.80e-08 ms/cycle\n  - Avg task energy: 2.33e-07 mJ/cycle\n  - Regime: balanced\nMode: BALANCED",
+  "plan_excerpt": "\n## Chain-of-Thought Reasoning:\nThe Planner Agent's goal is to develop a comprehensive plan for optimizing task offloading in the given edge-cloud environment, guiding an evaluator agent to find the optimal placement policy `p = [l_1, l_2, ..., l_N]`. The optimization objective is to minimize the total cost `U(w,p)` in BALANCED mode, which equally weights time and energy costs.\n\n**Step-by-Step Analysis:**\n\n1.  **Environment Analysis:**\n    *   **Locations:** We have 7 locations: 1 IOT device (l="
+}
