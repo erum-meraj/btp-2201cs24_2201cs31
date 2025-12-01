@@ -1,0 +1,57 @@
+{
+  "experiment_id": "exp_0",
+  "timestamp": "2025-12-02T02:43:39.457011",
+  "workflow_features": {
+    "N": 6,
+    "v_mean": 16373912.166666666,
+    "v_std": 8878862.114605779,
+    "v_max": 26496489.0,
+    "v_min": 7224068.0,
+    "edge_count": 5,
+    "edge_density": 0.16666666666666666,
+    "d_mean": 3751146.7070777565,
+    "d_std": 3500700.578527975,
+    "d_max": 9734940.755263355,
+    "d_min": 586938.8326294161,
+    "nodes_linear": 0,
+    "nodes_source": 3,
+    "nodes_sink": 2,
+    "critical_path_length": 0
+  },
+  "environment_features": {
+    "location_count": 2,
+    "iot_count": 1,
+    "edge_count": 0,
+    "cloud_count": 1,
+    "dr_mean": 0.002558140728480954,
+    "dr_std": 0.0001525516814306169,
+    "dr_max": 0.0027106924099115706,
+    "dr_min": 0.002405589047050337,
+    "de_mean": 7.155406125342837e-05,
+    "de_std": 4.844593874657164e-05,
+    "vr_mean": 6.304342137182051e-08,
+    "vr_std": 3.695657862817948e-08,
+    "ve_mean": 4.475804187581433e-07,
+    "ve_std": 1.5241958124185665e-07,
+    "regime": "network-bound"
+  },
+  "params": {
+    "CT": 0.2,
+    "CE": 1.2,
+    "delta_t": 1,
+    "delta_e": 1
+  },
+  "optimal_policy": [
+    1,
+    1,
+    1,
+    1,
+    1,
+    1
+  ],
+  "best_cost": 1075.288873,
+  "evaluated_policies": 0,
+  "skipped_policies": 0,
+  "summary": "Workflow: 6 tasks\n  - Avg compute: 1.64e+07 cycles (std: 8.88e+06)\n  - Edge density: 16.67% (5 edges)\n  - Avg data dependency: 3.75e+06 bytes\n  - Critical path length: ~0 hops\n  - Structure: Mixed topology\nEnvironment: 2 locations\n  - 0 edge, 1 cloud servers\n  - Avg network latency: 2.56e-03 ms/byte\n  - Avg compute speed: 6.30e-08 ms/cycle\n  - Avg task energy: 4.48e-07 mJ/cycle\n  - Regime: network-bound\nMode: BALANCED",
+  "plan_excerpt": "\n## Chain-of-Thought Reasoning:\nTo create a comprehensive plan for task offloading optimization in the given edge-cloud scenario, we need to follow a structured approach based on the provided framework.\n\n### Step 1: Environment Analysis\n- **DR (Data Time Consumption)**: The time to move 1 byte of data between locations is given as DR(0, 1) = 2.405589e-03 ms/byte for transferring from IOT to CLOUD and DR(1, 0) = 2.710692e-03 ms/byte for the reverse. This indicates that data transfer times are rel"
+}

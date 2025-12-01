@@ -1,0 +1,57 @@
+{
+  "experiment_id": "exp_2",
+  "timestamp": "2025-12-02T02:44:24.792642",
+  "workflow_features": {
+    "N": 6,
+    "v_mean": 19865290.833333332,
+    "v_std": 11811283.171741817,
+    "v_max": 32600098.0,
+    "v_min": 3538964.0,
+    "edge_count": 6,
+    "edge_density": 0.2,
+    "d_mean": 1118636.181037457,
+    "d_std": 548258.0919372248,
+    "d_max": 2107571.6029788842,
+    "d_min": 607716.8654137694,
+    "nodes_linear": 1,
+    "nodes_source": 1,
+    "nodes_sink": 3,
+    "critical_path_length": 0
+  },
+  "environment_features": {
+    "location_count": 4,
+    "iot_count": 1,
+    "edge_count": 1,
+    "cloud_count": 2,
+    "dr_mean": 0.0007914469735497996,
+    "dr_std": 0.0010788325399011583,
+    "dr_max": 0.0025256329960564533,
+    "dr_min": 1.4486352635972518e-05,
+    "de_mean": 4.523458280315462e-05,
+    "de_std": 4.320699421066555e-05,
+    "vr_mean": 4.888493167881671e-08,
+    "vr_std": 2.993466687055489e-08,
+    "ve_mean": 2.7002598423363914e-07,
+    "ve_std": 1.9116572566356856e-07,
+    "regime": "network-bound"
+  },
+  "params": {
+    "CT": 0.2,
+    "CE": 1.2,
+    "delta_t": 1,
+    "delta_e": 1
+  },
+  "optimal_policy": [
+    2,
+    2,
+    2,
+    2,
+    2,
+    2
+  ],
+  "best_cost": 314.23494,
+  "evaluated_policies": 0,
+  "skipped_policies": 0,
+  "summary": "Workflow: 6 tasks\n  - Avg compute: 1.99e+07 cycles (std: 1.18e+07)\n  - Edge density: 20.00% (6 edges)\n  - Avg data dependency: 1.12e+06 bytes\n  - Critical path length: ~0 hops\n  - Structure: Mixed topology\nEnvironment: 4 locations\n  - 1 edge, 2 cloud servers\n  - Avg network latency: 7.91e-04 ms/byte\n  - Avg compute speed: 4.89e-08 ms/cycle\n  - Avg task energy: 2.70e-07 mJ/cycle\n  - Regime: network-bound\nMode: BALANCED",
+  "plan_excerpt": "\n## Chain-of-Thought Reasoning:\nTo analyze the given edge-cloud offloading scenario and create a comprehensive plan, we will follow the structured approach outlined in the problem statement.\n\n### Environment Analysis\nFirst, let's analyze the environment characteristics:\n- **DR (Data Time Consumption - ms/byte)**: The data transfer times between locations vary significantly, with the fastest transfer times between cloud servers (e.g., DR(1,2) = 4.366718e-05 ms/byte) and the slowest between the Io"
+}

@@ -1,0 +1,58 @@
+{
+  "experiment_id": "exp_4",
+  "timestamp": "2025-12-02T02:45:34.075971",
+  "workflow_features": {
+    "N": 7,
+    "v_mean": 17261111.714285713,
+    "v_std": 7579257.593344043,
+    "v_max": 25754797.0,
+    "v_min": 5334516.0,
+    "edge_count": 7,
+    "edge_density": 0.16666666666666666,
+    "d_mean": 6689555.205659219,
+    "d_std": 5227849.2964935275,
+    "d_max": 13519945.270034507,
+    "d_min": 1205220.6134702591,
+    "nodes_linear": 0,
+    "nodes_source": 3,
+    "nodes_sink": 2,
+    "critical_path_length": 0
+  },
+  "environment_features": {
+    "location_count": 2,
+    "iot_count": 1,
+    "edge_count": 0,
+    "cloud_count": 1,
+    "dr_mean": 0.0023938961959620733,
+    "dr_std": 9.919169815656944e-05,
+    "dr_max": 0.0024930878941186426,
+    "dr_min": 0.0022947044978055037,
+    "de_mean": 7.123132191999259e-05,
+    "de_std": 4.876867808000742e-05,
+    "vr_mean": 6.748383706490268e-08,
+    "vr_std": 3.2516162935097305e-08,
+    "ve_mean": 4.2480318873252586e-07,
+    "ve_std": 1.751968112674741e-07,
+    "regime": "network-bound"
+  },
+  "params": {
+    "CT": 0.2,
+    "CE": 1.2,
+    "delta_t": 1,
+    "delta_e": 1
+  },
+  "optimal_policy": [
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1
+  ],
+  "best_cost": 2561.072295,
+  "evaluated_policies": 0,
+  "skipped_policies": 0,
+  "summary": "Workflow: 7 tasks\n  - Avg compute: 1.73e+07 cycles (std: 7.58e+06)\n  - Edge density: 16.67% (7 edges)\n  - Avg data dependency: 6.69e+06 bytes\n  - Critical path length: ~0 hops\n  - Structure: Mixed topology\nEnvironment: 2 locations\n  - 0 edge, 1 cloud servers\n  - Avg network latency: 2.39e-03 ms/byte\n  - Avg compute speed: 6.75e-08 ms/cycle\n  - Avg task energy: 4.25e-07 mJ/cycle\n  - Regime: network-bound\nMode: BALANCED",
+  "plan_excerpt": "\n## Chain-of-Thought Reasoning:\nTo create a comprehensive plan for task offloading optimization in the given edge-cloud scenario, we need to follow a structured approach based on the provided framework. \n\n1. **Environment Analysis**: \n   - The Data Time Consumption (DR) characteristics show that moving data between the IoT and cloud locations takes approximately 2.294704e-03 ms/byte and 2.493088e-03 ms/byte, respectively. This indicates a relatively low latency for data transfer.\n   - Assessing "
+}

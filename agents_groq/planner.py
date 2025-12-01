@@ -1,14 +1,15 @@
-# agents/planner.py - FULLY ALIGNED with research paper specifications
+# agents_groq/planner.py - UPDATED with memory-based few-shot prompting
 from agents_groq.base_agent import BaseAgent
 import json
 
 
 class PlannerAgent(BaseAgent):
-    """Planner agent with Chain-of-Thought reasoning for task offloading."""
+    """Planner agent with Chain-of-Thought reasoning and memory-based few-shot prompting."""
 
-    def __init__(self, api_key: str, log_file: str = "agent_trace.txt"):
+    def __init__(self, api_key: str, log_file: str = "agent_trace.txt", memory_manager=None):
         super().__init__(api_key)
         self.log_file = log_file
+        self.memory_manager = memory_manager  # WorkflowMemory instance
 
     def _format_env_details(self, env: dict):
         """Format environment details following paper Section III-A."""
@@ -102,7 +103,7 @@ class PlannerAgent(BaseAgent):
         return "\n".join(details)
 
     def create_plan(self, env: dict, workflow: dict, params: dict):
-        """Create a detailed plan using Chain-of-Thought reasoning."""
+        """Create a detailed plan using Chain-of-Thought reasoning with few-shot examples."""
         
         env_details = self._format_env_details(env)
         workflow_details = self._format_workflow_details(workflow)
@@ -131,18 +132,45 @@ class PlannerAgent(BaseAgent):
         
         params_str = "\n".join(params_formatted)
         
+        # Retrieve similar executions for few-shot prompting
+        few_shot_examples = ""
+        learning_prompt = ""
+        
+        if self.memory_manager:
+            similar_executions = self.memory_manager.retrieve_similar_executions(
+                workflow, env, params, top_k=3
+            )
+            
+            if similar_executions:
+                few_shot_examples = self.memory_manager.format_few_shot_examples(similar_executions)
+                learning_prompt = """
+**Learning from Similar Cases:**
+Based on the historical examples above, identify patterns that might apply to the current scenario:
+- What placement strategies worked well in similar workflows?
+- How did the optimal policies balance local execution vs. offloading?
+- What trade-offs were made between time and energy costs?
+
+Apply these insights to guide your analysis of the current scenario.
+"""
+            else:
+                few_shot_examples = "## Historical Similar Cases:\nNo similar historical cases found. Analyzing from first principles.\n"
+        
         prompt = f"""
 You are the Planner Agent in a multi-agent system for task offloading optimization.
 
 Your job is to analyze the task offloading problem and create a comprehensive plan using Chain-of-Thought reasoning.
 
-## Environment Configuration (Section III-A of the paper):
+{few_shot_examples}
+
+## Current Scenario:
+
+### Environment Configuration (Section III-A of the paper):
 {env_details}
 
-## Workflow Structure (Section III-B - DAG-based Application Model):
+### Workflow Structure (Section III-B - DAG-based Application Model):
 {workflow_details}
 
-## Cost Model Parameters (Section III-C):
+### Cost Model Parameters (Section III-C):
 {params_str}
 
 ## Your Task:
@@ -180,6 +208,8 @@ Analyze this edge-cloud offloading scenario step-by-step following the paper's f
    - Which tasks benefit from edge offloading?
    - Which tasks justify cloud offloading despite higher latency?
    - Should dependent tasks be co-located to reduce data transfer?
+
+{learning_prompt}
 
 Provide a structured, detailed plan that will guide the evaluator agent in finding the optimal placement policy p = [l_1, l_2, ..., l_N].
 """
@@ -228,7 +258,7 @@ Provide a structured, detailed plan that will guide the evaluator agent in findi
     def run(self, state: dict):
         """
         The PlannerAgent generates a plan based on the environment,
-        using Chain-of-Thought reasoning for better decision-making.
+        using Chain-of-Thought reasoning and memory-based few-shot learning.
         """
         env = state.get("env", {})
         workflow = state.get("workflow", {})
@@ -240,7 +270,7 @@ Provide a structured, detailed plan that will guide the evaluator agent in findi
         new_state["plan"] = plan
         
         print("\n" + "="*60)
-        print("PLANNER OUTPUT (with CoT reasoning):")
+        print("PLANNER OUTPUT (with CoT reasoning + Few-Shot Learning):")
         print("="*60)
         print(plan[:500] + "..." if len(plan) > 500 else plan)
         print("="*60 + "\n")

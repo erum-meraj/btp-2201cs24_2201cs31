@@ -1,0 +1,58 @@
+{
+  "experiment_id": "exp_1",
+  "timestamp": "2025-12-02T02:43:48.837887",
+  "workflow_features": {
+    "N": 7,
+    "v_mean": 14186694.285714285,
+    "v_std": 7779966.918422739,
+    "v_max": 25699559.0,
+    "v_min": 4361969.0,
+    "edge_count": 8,
+    "edge_density": 0.19047619047619047,
+    "d_mean": 4044707.2984668408,
+    "d_std": 4354354.247983713,
+    "d_max": 13268256.051562166,
+    "d_min": 653467.9092149668,
+    "nodes_linear": 0,
+    "nodes_source": 3,
+    "nodes_sink": 2,
+    "critical_path_length": 0
+  },
+  "environment_features": {
+    "location_count": 5,
+    "iot_count": 1,
+    "edge_count": 1,
+    "cloud_count": 3,
+    "dr_mean": 0.0007027989350456258,
+    "dr_std": 0.001017267092195289,
+    "dr_max": 0.002592863581574285,
+    "dr_min": 1.2297453712864821e-05,
+    "de_mean": 4.08417085860124e-05,
+    "de_std": 3.96457985767886e-05,
+    "vr_mean": 4.1519389440331035e-08,
+    "vr_std": 3.018767701502689e-08,
+    "ve_mean": 2.8114092242930345e-07,
+    "ve_std": 1.6227292400262668e-07,
+    "regime": "network-bound"
+  },
+  "params": {
+    "CT": 0.2,
+    "CE": 1.2,
+    "delta_t": 1,
+    "delta_e": 1
+  },
+  "optimal_policy": [
+    3,
+    3,
+    3,
+    3,
+    3,
+    3,
+    3
+  ],
+  "best_cost": 1431.351481,
+  "evaluated_policies": 0,
+  "skipped_policies": 0,
+  "summary": "Workflow: 7 tasks\n  - Avg compute: 1.42e+07 cycles (std: 7.78e+06)\n  - Edge density: 19.05% (8 edges)\n  - Avg data dependency: 4.04e+06 bytes\n  - Critical path length: ~0 hops\n  - Structure: Mixed topology\nEnvironment: 5 locations\n  - 1 edge, 3 cloud servers\n  - Avg network latency: 7.03e-04 ms/byte\n  - Avg compute speed: 4.15e-08 ms/cycle\n  - Avg task energy: 2.81e-07 mJ/cycle\n  - Regime: network-bound\nMode: BALANCED",
+  "plan_excerpt": "\n## Chain-of-Thought Reasoning:\nTo create a comprehensive plan for task offloading optimization in the given edge-cloud scenario, we need to follow a structured approach based on the provided framework.\n\n**Step 1: Environment Analysis**\n\n- **DR (Data Time Consumption - ms/byte) characteristics**: The data transfer times between locations vary significantly, with transfers between edge and cloud locations (e.g., DR(0,2) = 1.879240e-05 ms/byte) being much faster than those involving the IoT locati"
+}
