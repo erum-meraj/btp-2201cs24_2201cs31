@@ -257,7 +257,7 @@ def serialize_instance_for_json(inst: Dict[str, Any]) -> Dict[str, Any]:
                     u, v = u_s, v_s
             else:
                 u, v = k, None
-        edges_list.append({"u": int(u), "v": int(v), "bytes": float(bytes_val)})
+        edges_list.append({"u": int(u), "v": int(v), "bytes": float(bytes_val)}) # type: ignore
 
     # DR map: convert (i,j) tuple keys to "i,j" strings for JSON safety
     DR_src = inst["env"]["DR"]
@@ -352,38 +352,6 @@ def generate_dataset(
         json.dump(dataset, fh, indent=2)
     print(f"Wrote {len(dataset)} instances to {out_file}")
 
-# -------------------------
-# CLI entrypoint (UPDATED to accept min_remote/max_remote)
-# -------------------------
-if __name__ == "__main__":
-    p = argparse.ArgumentParser()
-    p.add_argument("--out", type=str, default="dataset.json")
-    p.add_argument("--count", type=int, default=10)
-    p.add_argument("--min_v", type=int, default=6)
-    p.add_argument("--max_v", type=int, default=12)
-    p.add_argument("--edge_prob", type=float, default=0.25)
-    p.add_argument("--min_remote", type=int, default=1,
-                   help="Minimum number of remote locations (>=1). Location IDs will be 0..num_remote; 0 is IoT.")
-    p.add_argument("--max_remote", type=int, default=3,
-                   help="Maximum number of remote locations (>=min_remote).")
-    p.add_argument("--seed", type=int, default=42)
-    args = p.parse_args()
-
-    if args.min_remote < 0:
-        raise SystemExit("min_remote must be >= 0")
-    if args.max_remote < args.min_remote:
-        raise SystemExit("max_remote must be >= min_remote")
-
-    generate_dataset(
-        out_file=args.out,
-        count=args.count,
-        min_v=args.min_v,
-        max_v=args.max_v,
-        edge_prob=args.edge_prob,
-        min_remote=args.min_remote,
-        max_remote=args.max_remote,
-        seed=args.seed
-    )
 
 # -------------------------
 # CLI entrypoint
@@ -399,7 +367,7 @@ if __name__ == "__main__":
     p.add_argument("--out", type=str, default="dataset.json")
     p.add_argument("--count", type=int, default=50)
     p.add_argument("--min_v", type=int, default=6)
-    p.add_argument("--max_v", type=int, default=12)
+    p.add_argument("--max_v", type=int, default=7)
     p.add_argument("--edge_prob", type=float, default=0.25)
 
     # Two mutually-supporting ways to specify remotes:
