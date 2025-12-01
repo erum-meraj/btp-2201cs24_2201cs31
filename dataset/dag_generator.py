@@ -397,7 +397,7 @@ if __name__ == "__main__":
                     "or --min_remote/--max_remote (randomize per-instance)."
     )
     p.add_argument("--out", type=str, default="dataset.json")
-    p.add_argument("--count", type=int, default=10)
+    p.add_argument("--count", type=int, default=50)
     p.add_argument("--min_v", type=int, default=6)
     p.add_argument("--max_v", type=int, default=12)
     p.add_argument("--edge_prob", type=float, default=0.25)
