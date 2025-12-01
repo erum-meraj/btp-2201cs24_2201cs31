@@ -1,0 +1,57 @@
+{
+  "experiment_id": "exp_10",
+  "timestamp": "2025-12-02T03:08:39.174811",
+  "workflow_features": {
+    "N": 6,
+    "v_mean": 17580296.833333332,
+    "v_std": 7252817.611598093,
+    "v_max": 29410500.0,
+    "v_min": 7221756.0,
+    "edge_count": 5,
+    "edge_density": 0.16666666666666666,
+    "d_mean": 5521929.884401498,
+    "d_std": 5605560.566884283,
+    "d_max": 13578053.656159563,
+    "d_min": 511103.14009521285,
+    "nodes_linear": 1,
+    "nodes_source": 2,
+    "nodes_sink": 2,
+    "critical_path_length": 0
+  },
+  "environment_features": {
+    "location_count": 4,
+    "iot_count": 1,
+    "edge_count": 1,
+    "cloud_count": 2,
+    "dr_mean": 0.0007381824941038283,
+    "dr_std": 0.001013568027468382,
+    "dr_max": 0.002484846037428561,
+    "dr_min": 8.341464269327894e-06,
+    "de_mean": 4.605735706522151e-05,
+    "de_std": 4.269792140596572e-05,
+    "vr_mean": 4.5410914399866786e-08,
+    "vr_std": 3.169728577505707e-08,
+    "ve_mean": 3.2504833053565585e-07,
+    "ve_std": 1.67726132674652e-07,
+    "regime": "network-bound"
+  },
+  "params": {
+    "CT": 0.2,
+    "CE": 1.2,
+    "delta_t": 1,
+    "delta_e": 1
+  },
+  "optimal_policy": [
+    2,
+    2,
+    2,
+    2,
+    2,
+    2
+  ],
+  "best_cost": 1354.077173,
+  "evaluated_policies": 0,
+  "skipped_policies": 0,
+  "summary": "Workflow: 6 tasks\n  - Avg compute: 1.76e+07 cycles (std: 7.25e+06)\n  - Edge density: 16.67% (5 edges)\n  - Avg data dependency: 5.52e+06 bytes\n  - Critical path length: ~0 hops\n  - Structure: Mixed topology\nEnvironment: 4 locations\n  - 1 edge, 2 cloud servers\n  - Avg network latency: 7.38e-04 ms/byte\n  - Avg compute speed: 4.54e-08 ms/cycle\n  - Avg task energy: 3.25e-07 mJ/cycle\n  - Regime: network-bound\nMode: BALANCED",
+  "plan_excerpt": "\n## Chain-of-Thought Reasoning:\n**1. Problem Understanding and Goal:**\nThe objective is to determine an optimal offloading policy `p` for 6 tasks, minimizing a combined cost of time and energy in a `BALANCED` mode (delta_t=1, delta_e=1). This means both time and energy are equally weighted, with `CT=0.2` and `CE=1.2`.\n\n**2. Environment Analysis:**\n*   **Locations:** IOT (0), EDGE (1), CLOUD (2), CLOUD (3).\n    *   1 Edge server, 2 Cloud servers.\n*   **DR (Data Time Consumption - ms/byte):**\n    "
+}

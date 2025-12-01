@@ -1,0 +1,57 @@
+{
+  "experiment_id": "exp_13",
+  "timestamp": "2025-12-02T03:12:03.933995",
+  "workflow_features": {
+    "N": 6,
+    "v_mean": 19294946.0,
+    "v_std": 7058064.863328971,
+    "v_max": 29737108.0,
+    "v_min": 12414588.0,
+    "edge_count": 5,
+    "edge_density": 0.16666666666666666,
+    "d_mean": 5646355.403099734,
+    "d_std": 5273719.611140006,
+    "d_max": 14428262.421091603,
+    "d_min": 1012959.0161573836,
+    "nodes_linear": 0,
+    "nodes_source": 3,
+    "nodes_sink": 2,
+    "critical_path_length": 0
+  },
+  "environment_features": {
+    "location_count": 7,
+    "iot_count": 1,
+    "edge_count": 3,
+    "cloud_count": 3,
+    "dr_mean": 0.0003396226284335123,
+    "dr_std": 0.0007481239457227547,
+    "dr_max": 0.002900678520018199,
+    "dr_min": 9.28357187504122e-06,
+    "de_mean": 3.564532954376972e-05,
+    "de_std": 3.4471391837706e-05,
+    "vr_mean": 3.596806753542534e-08,
+    "vr_std": 2.6993034985631456e-08,
+    "ve_mean": 2.738529589396646e-07,
+    "ve_std": 1.3991209349541756e-07,
+    "regime": "network-bound"
+  },
+  "params": {
+    "CT": 0.2,
+    "CE": 1.2,
+    "delta_t": 1,
+    "delta_e": 1
+  },
+  "optimal_policy": [
+    5,
+    5,
+    5,
+    5,
+    5,
+    5
+  ],
+  "best_cost": 1270.490654,
+  "evaluated_policies": 0,
+  "skipped_policies": 0,
+  "summary": "Workflow: 6 tasks\n  - Avg compute: 1.93e+07 cycles (std: 7.06e+06)\n  - Edge density: 16.67% (5 edges)\n  - Avg data dependency: 5.65e+06 bytes\n  - Critical path length: ~0 hops\n  - Structure: Mixed topology\nEnvironment: 7 locations\n  - 3 edge, 3 cloud servers\n  - Avg network latency: 3.40e-04 ms/byte\n  - Avg compute speed: 3.60e-08 ms/cycle\n  - Avg task energy: 2.74e-07 mJ/cycle\n  - Regime: network-bound\nMode: BALANCED",
+  "plan_excerpt": "\n## Chain-of-Thought Reasoning:\n**1. Problem Understanding and Goal:**\nThe objective is to find an optimal offloading policy `p = [l_1, ..., l_N]` for N=6 tasks across 7 available locations (1 IOT, 3 EDGE, 3 CLOUD). The goal is to minimize a combined cost `U(w,p) = delta_t * T + delta_e * E` in `BALANCED` mode, where `delta_t = 1` and `delta_e = 1`. This means both time and energy costs are equally weighted.\n\n**2. Environment Analysis:**\n*   **Locations:** l=0 (IOT), l=1,2,3 (EDGE), l=4,5,6 (CLO"
+}

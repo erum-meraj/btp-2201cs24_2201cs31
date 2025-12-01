@@ -130,6 +130,22 @@ You are helping optimize task offloading decisions for an edge-cloud system foll
 Generate 3-5 intelligent candidate placement policies p = {{l_1, l_2, ..., l_{N}}} using ONLY these location IDs: {location_ids}
 
 Provide candidate policies as lists: [l_1, l_2, ..., l_{N}]
+
+## Concise Output Requirement
+
+Return only:
+- A <summary> (≤ 25 words) giving the main insight
+- A <policies> section listing 3–5 candidate policies
+
+Format:
+<summary>...</summary>
+<policies>
+[p1, p2, ..., pN]
+[p1, p2, ..., pN]
+</policies>
+
+Do NOT output chain-of-thought. Think internally only.
+
 """
         self._log_interaction("EVALUATOR", prompt, None, "PROMPT")
         result = self.think_with_cot(prompt, return_reasoning=True)

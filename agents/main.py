@@ -626,7 +626,7 @@ if __name__ == "__main__":
     print(f"   Loaded {len(dataset)} experiment configurations\n")
     
     # Limit number of experiments for testing (set to None to run all)
-    threshold = 5
+    threshold = 9
     
     # Iterate over all objects and evaluate each
     for idx, dataset_obj in enumerate(dataset):

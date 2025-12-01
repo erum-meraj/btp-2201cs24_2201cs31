@@ -105,7 +105,23 @@ Using Chain-of-Thought reasoning, provide a comprehensive explanation:
    - Robustness to environment changes
    - Monitoring and adaptation strategies
 
+## Concise Output Requirement
+
+Return a short, direct explanation — no chain-of-thought — using:
+
+<summary>≤ 35-word overview</summary>
+<bullets>
+- key insight 1
+- key insight 2
+- key insight 3
+</bullets>
+<justification>one-line reasoning</justification>
+
+Focus on clarity and brevity. All deep reasoning should remain internal.
+   
+
 Provide your explanation using the paper's notation and terminology.
+
 """
         
         # Log the prompt

@@ -1,0 +1,25 @@
+SUMMARY
+workflow_id,78d7295d-9c36-47d2-a32f-ccad2b465b60
+timestamp,2025-12-01T21:33:40.847209Z
+num_tasks,6
+num_edges,6
+optimal_cost,1734.301196
+evaluation,"Optimal policy found: U(w,p*) = 1734.301196"
+
+PLACEMENT POLICY
+task_id,task_v (if available),assigned_location
+1,18124687.0,3
+2,33863952.0,3
+3,19081201.0,3
+4,30337624.0,3
+5,34546675.0,3
+6,26437999.0,3
+
+EDGES
+u,v,bytes
+1,2,1873118.6396606641
+1,6,7300367.677364351
+4,5,10443441.336064612
+2,3,10369215.417467823
+5,3,6060240.406454157
+6,3,1703434.349829972

@@ -1,0 +1,58 @@
+{
+  "experiment_id": "exp_9",
+  "timestamp": "2025-12-02T03:06:58.927345",
+  "workflow_features": {
+    "N": 7,
+    "v_mean": 14387834.42857143,
+    "v_std": 11765970.286457988,
+    "v_max": 32549357.0,
+    "v_min": 1859886.0,
+    "edge_count": 6,
+    "edge_density": 0.14285714285714285,
+    "d_mean": 5882281.7350841155,
+    "d_std": 4334238.230095728,
+    "d_max": 12428147.059087591,
+    "d_min": 693290.66398948,
+    "nodes_linear": 0,
+    "nodes_source": 3,
+    "nodes_sink": 3,
+    "critical_path_length": 0
+  },
+  "environment_features": {
+    "location_count": 6,
+    "iot_count": 1,
+    "edge_count": 1,
+    "cloud_count": 4,
+    "dr_mean": 0.0007361925393876816,
+    "dr_std": 0.0011636728139122331,
+    "dr_max": 0.002984790460582663,
+    "dr_min": 1.3521046236677635e-05,
+    "de_mean": 3.890919587595746e-05,
+    "de_std": 3.630600703134487e-05,
+    "vr_mean": 3.8135975275056175e-08,
+    "vr_std": 2.8010415554160685e-08,
+    "ve_mean": 2.5918638241691675e-07,
+    "ve_std": 1.5456954543860878e-07,
+    "regime": "network-bound"
+  },
+  "params": {
+    "CT": 0.2,
+    "CE": 1.2,
+    "delta_t": 1,
+    "delta_e": 1
+  },
+  "optimal_policy": [
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4
+  ],
+  "best_cost": 1708.993418,
+  "evaluated_policies": 0,
+  "skipped_policies": 0,
+  "summary": "Workflow: 7 tasks\n  - Avg compute: 1.44e+07 cycles (std: 1.18e+07)\n  - Edge density: 14.29% (6 edges)\n  - Avg data dependency: 5.88e+06 bytes\n  - Critical path length: ~0 hops\n  - Structure: Multiple sources/sinks (parallel)\nEnvironment: 6 locations\n  - 1 edge, 4 cloud servers\n  - Avg network latency: 7.36e-04 ms/byte\n  - Avg compute speed: 3.81e-08 ms/cycle\n  - Avg task energy: 2.59e-07 mJ/cycle\n  - Regime: network-bound\nMode: BALANCED",
+  "plan_excerpt": "\n## Chain-of-Thought Reasoning:\n**1. Problem Understanding and Goal:**\nThe objective is to find an optimal offloading policy `p = [l_1, ..., l_N]` for N=7 tasks across 6 available locations (1 IOT, 4 Cloud, 1 Edge). The goal is to minimize the total cost `U(w,p)` in `BALANCED` mode, where `delta_t = 1` and `delta_e = 1`. The cost function is `U(w,p) = delta_t * CT * T + delta_e * CE * E`. Given `CT = 0.2` and `CE = 1.2`, this effectively means minimizing `0.2 * T + 1.2 * E`. This implies that en"
+}

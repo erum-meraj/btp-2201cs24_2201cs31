@@ -70,7 +70,27 @@ Analyze this edge-cloud offloading scenario step-by-step following the paper's f
 {learning_prompt}
 
 Provide a structured, detailed plan that will guide the evaluator agent in finding the optimal placement policy p = [l_1, l_2, ..., l_N].
-""")
+
+## Concise Output Requirement (Do NOT change any internal analysis)
+
+After completing the full Chain-of-Thought reasoning internally:
+
+RETURN ONLY:
+- A short final plan summary (≤ 40 words)
+- 3–6 direct, action-oriented placement strategy bullets (≤ 12 words each)
+- No detailed chain-of-thought in the output
+
+Format:
+<summary>...</summary>
+<bullets>
+- ...
+- ...
+</bullets>
+
+Think step-by-step internally but do NOT reveal the reasoning.
+
+                                                            
+                                                            """)
 
     def _format_env_details(self, env: dict):
         """Format environment details following paper Section III-A."""
