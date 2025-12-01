@@ -1,21 +1,57 @@
 from langchain_google_genai import ChatGoogleGenerativeAI
-import json
 import re
 
 class BaseAgent:
     """Base class for all Gemini-powered agents with Chain-of-Thought support."""
 
-    def __init__(self, api_key: str, model_name: str = "models/gemini-2.5-flash", temperature: float = 0.3):
+    def __init__(self, api_key: str, model_name: str = "models/gemini-2.0-flash-exp", temperature: float = 0.3):
         self.llm = ChatGoogleGenerativeAI(
             model=model_name,
             google_api_key=api_key,
             temperature=temperature,
         )
 
+    def _extract_content(self, response):
+        """
+        Extract text content from LLM response, handling both string and list formats.
+        
+        Args:
+            response: LLM response object
+            
+        Returns:
+            String content
+        """
+        content = response.content
+        
+        # Handle list of content blocks (multimodal responses)
+        if isinstance(content, list):
+            text_parts = []
+            for block in content:
+                if isinstance(block, dict):
+                    # Handle dict format: {"type": "text", "text": "..."}
+                    if block.get("type") == "text" and "text" in block:
+                        text_parts.append(block["text"])
+                    # Handle other dict formats
+                    elif "text" in block:
+                        text_parts.append(block["text"])
+                elif isinstance(block, str):
+                    # Handle string blocks
+                    text_parts.append(block)
+                elif hasattr(block, 'text'):
+                    # Handle objects with text attribute
+                    text_parts.append(block.text)
+            content = "\n".join(text_parts)
+        
+        # Ensure we have a string
+        if not isinstance(content, str):
+            content = str(content)
+        
+        return content.strip()
+
     def think(self, prompt: str):
         """Run LLM reasoning and return response."""
         response = self.llm.invoke(prompt)
-        return response.content.strip()
+        return self._extract_content(response)
 
     def think_with_cot(self, prompt: str, return_reasoning: bool = False):
         """
@@ -38,7 +74,8 @@ Think through this step-by-step:
 3. Reason through the implications of each decision
 4. Arrive at a well-justified conclusion
 
-Format your response as:
+IMPORTANT: Format your response EXACTLY as shown below, with opening and closing tags on their own lines:
+
 <reasoning>
 [Your detailed step-by-step thinking process here]
 </reasoning>
@@ -46,9 +83,11 @@ Format your response as:
 <answer>
 [Your final answer here]
 </answer>
+
+Do not include any text before <reasoning> or after </answer>.
 """
         response = self.llm.invoke(cot_prompt)
-        content = response.content.strip()
+        content = self._extract_content(response)
         
         reasoning_match = re.search(r'<reasoning>(.*?)</reasoning>', content, re.DOTALL)
         answer_match = re.search(r'<answer>(.*?)</answer>', content, re.DOTALL)
@@ -83,6 +122,8 @@ Format your response as:
 Think through this step-by-step. This is reasoning path {i+1}/{num_samples}.
 Show your work and explain your reasoning clearly.
 
+IMPORTANT: Format your response EXACTLY as shown below:
+
 <reasoning>
 [Your step-by-step thinking]
 </reasoning>
@@ -92,7 +133,7 @@ Show your work and explain your reasoning clearly.
 </answer>
 """
             response = self.llm.invoke(cot_prompt)
-            content = response.content.strip()
+            content = self._extract_content(response)
             
             reasoning_match = re.search(r'<reasoning>(.*?)</reasoning>', content, re.DOTALL)
             answer_match = re.search(r'<answer>(.*?)</answer>', content, re.DOTALL)

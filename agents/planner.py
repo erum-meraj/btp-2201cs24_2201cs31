@@ -88,9 +88,7 @@ Format:
 </bullets>
 
 Think step-by-step internally but do NOT reveal the reasoning.
-
-                                                            
-                                                            """)
+""")
 
     def _format_env_details(self, env: dict):
         """Format environment details following paper Section III-A."""

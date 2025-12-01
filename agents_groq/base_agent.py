@@ -1,5 +1,4 @@
 from groq import Groq
-import json
 import re
 
 class BaseAgent:
@@ -10,6 +9,48 @@ class BaseAgent:
         self.model_name = model_name
         self.temperature = temperature
 
+    def _extract_content(self, response):
+        """
+        Extract text content from LLM response, handling both string and list formats.
+        
+        Args:
+            response: Groq response object
+            
+        Returns:
+            String content
+        """
+        # For Groq API, response is typically response.choices[0].message.content
+        try:
+            content = response.choices[0].message.content
+        except (AttributeError, IndexError, KeyError):
+            # Fallback if structure is different
+            content = str(response)
+        
+        # Handle list of content blocks (multimodal responses)
+        if isinstance(content, list):
+            text_parts = []
+            for block in content:
+                if isinstance(block, dict):
+                    # Handle dict format: {"type": "text", "text": "..."}
+                    if block.get("type") == "text" and "text" in block:
+                        text_parts.append(block["text"])
+                    # Handle other dict formats
+                    elif "text" in block:
+                        text_parts.append(block["text"])
+                elif isinstance(block, str):
+                    # Handle string blocks
+                    text_parts.append(block)
+                elif hasattr(block, 'text'):
+                    # Handle objects with text attribute
+                    text_parts.append(block.text)
+            content = "\n".join(text_parts)
+        
+        # Ensure we have a string
+        if not isinstance(content, str):
+            content = str(content)
+        
+        return content.strip()
+
     def think(self, prompt: str):
         """Run LLM reasoning and return response."""
         response = self.client.chat.completions.create(
@@ -19,7 +60,7 @@ class BaseAgent:
             ],
             temperature=self.temperature,
         )
-        return response.choices[0].message.content.strip()
+        return self._extract_content(response)
 
     def think_with_cot(self, prompt: str, return_reasoning: bool = False):
         """
@@ -42,7 +83,8 @@ Think through this step-by-step:
 3. Reason through the implications of each decision
 4. Arrive at a well-justified conclusion
 
-Format your response as:
+IMPORTANT: Format your response EXACTLY as shown below, with opening and closing tags on their own lines:
+
 <reasoning>
 [Your detailed step-by-step thinking process here]
 </reasoning>
@@ -50,6 +92,8 @@ Format your response as:
 <answer>
 [Your final answer here]
 </answer>
+
+Do not include any text before <reasoning> or after </answer>.
 """
         response = self.client.chat.completions.create(
             model=self.model_name,
@@ -58,7 +102,7 @@ Format your response as:
             ],
             temperature=self.temperature,
         )
-        content = response.choices[0].message.content.strip()
+        content = self._extract_content(response)
         
         reasoning_match = re.search(r'<reasoning>(.*?)</reasoning>', content, re.DOTALL)
         answer_match = re.search(r'<answer>(.*?)</answer>', content, re.DOTALL)
@@ -93,6 +137,8 @@ Format your response as:
 Think through this step-by-step. This is reasoning path {i+1}/{num_samples}.
 Show your work and explain your reasoning clearly.
 
+IMPORTANT: Format your response EXACTLY as shown below:
+
 <reasoning>
 [Your step-by-step thinking]
 </reasoning>
@@ -108,7 +154,7 @@ Show your work and explain your reasoning clearly.
                 ],
                 temperature=self.temperature,
             )
-            content = response.choices[0].message.content.strip()
+            content = self._extract_content(response)
             
             reasoning_match = re.search(r'<reasoning>(.*?)</reasoning>', content, re.DOTALL)
             answer_match = re.search(r'<answer>(.*?)</answer>', content, re.DOTALL)
