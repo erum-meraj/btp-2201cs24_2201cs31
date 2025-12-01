@@ -1,13 +1,13 @@
 # main.py - UPDATED: Integrated memory system for learning across experiments
-import os, json, dotenv
+import os, json, dotenv, csv
 from datetime import datetime
 from langgraph.graph import StateGraph, END, START
 from agents.planner import PlannerAgent
 from agents.evaluator import EvaluatorAgent
 from agents.output import OutputAgent
-from typing import TypedDict, Optional, List, Dict, Tuple
+from typing import TypedDict, Optional, List, Dict, Tuple, Any
 from core.workflow import Workflow
-from core.environment import Environment, Location
+from core.environment import Environment
 from core.memory_manager import WorkflowMemory
 
 dotenv.load_dotenv()
@@ -203,147 +203,219 @@ def create_environment_dict(
         "VE": VE_map
     }
 
+def save_results_csv(out_dir: str, workflow_meta: dict, workflow_dict: dict,
+                     placement_policy: dict, optimal_cost: float, metrics: dict = None):
+    """
+    Create a CSV file per workflow summarizing results.
+
+    - out_dir: directory to save CSVs
+    - workflow_meta: metadata dict (e.g., meta.pk or meta.id or seed)
+    - workflow_dict: as returned by parse_dataset_object (contains 'tasks' and 'edges')
+    - placement_policy: mapping task_id -> assigned location (int or str)
+    - optimal_cost: numeric cost for this placement
+    - metrics: optional dict of other metrics (latency, energy, etc.)
+    """
+    os.makedirs(out_dir, exist_ok=True)
+    # choose filename based on meta if present
+    w_id = workflow_meta.get('id') or workflow_meta.get('pk') or workflow_meta.get('seed') or 'unknown'
+    fname = f"workflow_{w_id}.csv"
+    path = os.path.join(out_dir, fname)
+
+    tasks = workflow_dict.get('tasks', {})
+    edges = workflow_dict.get('edges', {})
+
+    with open(path, 'w', newline='') as csvfile:
+        writer = csv.writer(csvfile)
+
+        # summary section
+        writer.writerow(['SUMMARY'])
+        writer.writerow(['workflow_id', w_id])
+        writer.writerow(['timestamp', datetime.utcnow().isoformat() + 'Z'])
+        writer.writerow(['num_tasks', len(tasks)])
+        writer.writerow(['num_edges', len(edges)])
+        writer.writerow(['optimal_cost', optimal_cost])
+        # write additional metrics if any
+        if metrics:
+            for k, v in metrics.items():
+                writer.writerow([k, v])
+        writer.writerow([])
+
+        # placement policy section
+        writer.writerow(['PLACEMENT POLICY'])
+        writer.writerow(['task_id', 'task_v (if available)', 'assigned_location'])
+        for tid in sorted(tasks, key=lambda x: int(x)):
+            tval = tasks[tid].get('v') if isinstance(tasks[tid], dict) else ''
+            assigned = placement_policy.get(int(tid)) if placement_policy is not None else ''
+            writer.writerow([tid, tval, assigned])
+        writer.writerow([])
+
+        # edges / bytes (optional, useful for benchmarking)
+        writer.writerow(['EDGES'])
+        writer.writerow(['u', 'v', 'bytes'])
+        for (u, v), b in edges.items():
+            writer.writerow([u, v, b])
+
+    # returns the path for convenience
+    return path
+
 def parse_dataset_object(dataset_obj: dict) -> Tuple[dict, dict, dict, dict]:
     """
-    Parse a dataset object from JSON and convert it to the format expected by the program.
-    FIXED: Maps type-based environment parameters to all location instances.
-    
-    Args:
-        dataset_obj: Single object from dataset.json
-        
-    Returns:
-        Tuple of (workflow_dict, locations_types, env_dict, params)
+    Parse a dataset object (robust to the dataset.json format used in uploads).
+    Returns (workflow_dict, locations_types, env_dict, params)
     """
-    # ======================== PARSE WORKFLOW ========================
+    # -------------------- WORKFLOW --------------------
     workflow_data = dataset_obj['workflow']
-    
-    # Convert tasks: {1: {"v": 20420497.0}, ...} -> {1: {"v": 20420497.0}, ...}
-    tasks = {int(k): {"v": v["v"]} for k, v in workflow_data['tasks'].items()}
-    
-    # Convert edges: [[1, 2, 14239855.05], ...] -> {(1, 2): 14239855.05, ...}
-    edges = {(int(edge[0]), int(edge[1])): edge[2] for edge in workflow_data['edges']}
-    
-    workflow_dict = {
-        "tasks": tasks,
-        "edges": edges,
-        "N": workflow_data['N']
-    }
-    
-    # ======================== PARSE LOCATION TYPES ========================
-    # location_types: {1: 2, 2: 2, 3: 1, ...} where 0=iot, 1=edge, 2=cloud
-    location_types_raw = {int(k): int(v) for k, v in dataset_obj['location_types'].items()}
-    
-    # Map numeric types to string types
-    type_mapping = {0: "iot", 1: "edge", 2: "cloud"}
-    locations_types = {loc: type_mapping[type_num] for loc, type_num in location_types_raw.items()}
-    
-    # FIX: Always ensure location 0 exists and is of type 'iot'
+
+    # tasks: keys may be strings -> convert to int
+    tasks = {int(k): {"v": float(v["v"])} for k, v in workflow_data['tasks'].items()}
+
+    # edges: accept either list-of-dicts {"u":..,"v":..,"bytes":..} OR list-of-lists [u,v,bytes]
+    edges_raw = workflow_data.get('edges', [])
+    edges = {}
+    if isinstance(edges_raw, dict):
+        # in case someone provided a dict keyed by "u,v" (unlikely) handle gracefully
+        for k, val in edges_raw.items():
+            if isinstance(val, dict) and 'bytes' in val:
+                # attempt to split key
+                try:
+                    u_str, v_str = k.split(',')
+                    u, v = int(u_str), int(v_str)
+                    edges[(u, v)] = float(val['bytes'])
+                except Exception:
+                    continue
+    else:
+        for e in edges_raw:
+            if isinstance(e, dict):
+                u = int(e.get('u'))
+                v = int(e.get('v'))
+                b = float(e.get('bytes', e.get('bw', 0.0)))
+                edges[(u, v)] = b
+            elif isinstance(e, (list, tuple)) and len(e) >= 3:
+                edges[(int(e[0]), int(e[1]))] = float(e[2])
+            else:
+                # skip unknown formats
+                continue
+
+    workflow_dict = {"tasks": tasks, "edges": edges, "N": int(workflow_data.get('N', len(tasks)))}
+
+    # -------------------- LOCATION TYPES --------------------
+    # dataset may have: {"0": "iot", "1":"edge", ...} OR {"0": 0, "1":1, ...}
+    raw_loc_types = dataset_obj.get('location_types', {})
+    # attempt to detect form
+    locations_types = {}
+    for k, v in raw_loc_types.items():
+        loc_id = int(k)
+        if isinstance(v, str):
+            # assume already "iot"/"edge"/"cloud"
+            locations_types[loc_id] = v
+        else:
+            # numeric codes: 0=iot,1=edge,2=cloud
+            type_map = {0: "iot", 1: "edge", 2: "cloud"}
+            locations_types[loc_id] = type_map.get(int(v), "edge")
+
+    # ensure location 0 exists and is iot (warn if we auto-fix)
     if 0 not in locations_types:
         locations_types[0] = "iot"
-        print("⚠️  Warning: Location 0 (IoT device) was missing. Added automatically.")
+        print("⚠️  Warning: Location 0 (IoT device) missing in dataset. Added as 'iot'.")
     elif locations_types[0] != "iot":
-        print(f"⚠️  Warning: Location 0 was type '{locations_types[0]}'. Changed to 'iot'.")
+        print(f"⚠️  Warning: Location 0 was type '{locations_types[0]}'. Forcing to 'iot'.")
         locations_types[0] = "iot"
-    
-    # ======================== PARSE ENVIRONMENT ========================
-    env_data = dataset_obj['env']
-    
-    # Parse DR: [[0, 0, 0.0], [0, 1, 9.834e-06], ...] -> {(0, 0): 0.0, (0, 1): 9.834e-06, ...}
-    # NOTE: DR in dataset is indexed by location TYPE (0, 1, 2), not location ID
-    DR_type_map = {}
-    for entry in env_data['DR']:
-        src_type, dst_type, rate = entry
-        DR_type_map[(int(src_type), int(dst_type))] = float(rate)
-    
-    # Parse DE/VR/VE: These are indexed by location TYPE
-    DE_type_map = {int(entry[0]): float(entry[1]) for entry in env_data['DE']}
-    VR_type_map = {int(entry[0]): float(entry[1]) for entry in env_data['VR']}
-    VE_type_map = {int(entry[0]): float(entry[1]) for entry in env_data['VE']}
-    
-    # ======================== MAP TYPE-BASED PARAMS TO LOCATION IDs ========================
-    # Create actual location-based maps by looking up each location's type
-    
-    # DE_map: {location_id: energy} based on location type
-    DE_map = {}
-    for loc_id, loc_type_str in locations_types.items():
-        # Convert string type back to numeric for lookup
-        type_num = {"iot": 0, "edge": 1, "cloud": 2}[loc_type_str]
-        if type_num in DE_type_map:
-            DE_map[loc_id] = DE_type_map[type_num]
-        else:
-            # Fallback default
-            DE_map[loc_id] = 0.00012 if type_num == 0 else 2e-5
-            print(f"⚠️  Warning: DE for type {type_num} missing. Using fallback.")
-    
-    # VR_map: {location_id: time_per_cycle} based on location type
-    VR_map = {}
-    for loc_id, loc_type_str in locations_types.items():
-        type_num = {"iot": 0, "edge": 1, "cloud": 2}[loc_type_str]
-        if type_num in VR_type_map:
-            VR_map[loc_id] = VR_type_map[type_num]
-        else:
-            VR_map[loc_id] = 1e-7 if type_num == 0 else 2e-8
-            print(f"⚠️  Warning: VR for type {type_num} missing. Using fallback.")
-    
-    # VE_map: {location_id: energy_per_cycle} based on location type
-    VE_map = {}
-    for loc_id, loc_type_str in locations_types.items():
-        type_num = {"iot": 0, "edge": 1, "cloud": 2}[loc_type_str]
-        if type_num in VE_type_map:
-            VE_map[loc_id] = VE_type_map[type_num]
-        else:
-            VE_map[loc_id] = 6e-7 if type_num == 0 else 2.5e-7
-            print(f"⚠️  Warning: VE for type {type_num} missing. Using fallback.")
-    
-    # DR_map: {(loc_i, loc_j): rate} based on location types
-    # For each pair of locations, look up their types and get the DR value
+
+    # -------------------- ENVIRONMENT --------------------
+    # dataset env commonly has:
+    # "DR": { "0,1": rate, "1,0": rate, ... }
+    # "DE","VR","VE": { "0": val, "1": val, ... }
+    env_raw = dataset_obj.get('env', {})
+
+    # Parse DR
     DR_map = {}
-    all_location_ids = sorted(locations_types.keys())
-    
-    for src_id in all_location_ids:
-        for dst_id in all_location_ids:
-            src_type_str = locations_types[src_id]
-            dst_type_str = locations_types[dst_id]
-            
-            src_type_num = {"iot": 0, "edge": 1, "cloud": 2}[src_type_str]
-            dst_type_num = {"iot": 0, "edge": 1, "cloud": 2}[dst_type_str]
-            
-            if (src_type_num, dst_type_num) in DR_type_map:
-                DR_map[(src_id, dst_id)] = DR_type_map[(src_type_num, dst_type_num)]
-            elif src_id == dst_id:
-                DR_map[(src_id, dst_id)] = 0.0  # Self-loop is always 0
+    dr_raw = env_raw.get('DR', {})
+    if isinstance(dr_raw, dict):
+        for k, v in dr_raw.items():
+            # key might be "i,j" or integer index string
+            if isinstance(k, str) and ',' in k:
+                i_str, j_str = k.split(',')
+                i, j = int(i_str.strip()), int(j_str.strip())
+                DR_map[(i, j)] = float(v)
             else:
-                # Fallback: use a default inter-location rate
-                DR_map[(src_id, dst_id)] = 1e-5
-                print(f"⚠️  Warning: DR({src_type_num}, {dst_type_num}) missing. Using fallback.")
-    
-    # Create environment dictionary
-    env_dict = create_environment_dict(
-        locations_types=locations_types,
-        DR_map=DR_map,
-        DE_map=DE_map,
-        VR_map=VR_map,
-        VE_map=VE_map
-    )
-    
-    # ======================== PARSE PARAMETERS ========================
-    costs = dataset_obj['costs']
-    mode = dataset_obj['mode']
-    
-    params = {
-        "CT": costs['CT'],
-        "CE": costs['CE'],
-        "delta_t": mode['delta_t'],
-        "delta_e": mode['delta_e']
+                # fallback: skip or attempt conversion
+                try:
+                    idx = int(k)
+                    DR_map[(idx, idx)] = float(v)
+                except Exception:
+                    continue
+    else:
+        # assume list-of-lists like [[i,j,rate],...]
+        for entry in dr_raw:
+            if isinstance(entry, (list, tuple)) and len(entry) >= 3:
+                DR_map[(int(entry[0]), int(entry[1]))] = float(entry[2])
+
+    # Parse DE / VR / VE
+    def _parse_scalar_map(raw_map):
+        out = {}
+        if isinstance(raw_map, dict):
+            for k, v in raw_map.items():
+                try:
+                    out[int(k)] = float(v)
+                except:
+                    # if keys are numeric types already
+                    try:
+                        out[int(k)] = float(v)
+                    except:
+                        continue
+        elif isinstance(raw_map, list):
+            # list of [type_or_loc, value] entries
+            for entry in raw_map:
+                if isinstance(entry, (list, tuple)) and len(entry) >= 2:
+                    out[int(entry[0])] = float(entry[1])
+        return out
+
+    DE_map = _parse_scalar_map(env_raw.get('DE', {}))
+    VR_map = _parse_scalar_map(env_raw.get('VR', {}))
+    VE_map = _parse_scalar_map(env_raw.get('VE', {}))
+
+    # If DE/VR/VE were provided per-location-type (0=iot,1=edge,2=cloud),
+    # map them to individual locations using locations_types
+    # Detect if keys look like types (0/1/2) but locations use more ids
+    if all(k in (0,1,2) or k < 3 for k in DE_map.keys()) and max(locations_types.keys(), default=0) > 3:
+        # expand
+        DE_map_expanded = {}
+        VR_map_expanded = {}
+        VE_map_expanded = {}
+        type_to_num = {"iot":0, "edge":1, "cloud":2}
+        for loc, loc_type in locations_types.items():
+            tnum = type_to_num.get(loc_type, 1)
+            if tnum in DE_map: DE_map_expanded[loc] = DE_map[tnum]
+            if tnum in VR_map: VR_map_expanded[loc] = VR_map[tnum]
+            if tnum in VE_map: VE_map_expanded[loc] = VE_map[tnum]
+        DE_map = DE_map_expanded or DE_map
+        VR_map = VR_map_expanded or VR_map
+        VE_map = VE_map_expanded or VE_map
+
+    env_dict = {
+        "locations": locations_types,
+        "DR": DR_map,
+        "DE": DE_map,
+        "VR": VR_map,
+        "VE": VE_map
     }
-    
+
+    # -------------------- PARAMS --------------------
+    costs = dataset_obj.get('costs', {})
+    mode = dataset_obj.get('mode', {})
+    params = {
+        "CT": float(costs.get('CT', 0.2)),
+        "CE": float(costs.get('CE', 1.2)),
+        "delta_t": int(mode.get('delta_t', 1)),
+        "delta_e": int(mode.get('delta_e', 1))
+    }
+
     return workflow_dict, locations_types, env_dict, params
 
 def load_dataset(json_file: str = "dataset/dataset.json") -> List[dict]:
     """Load all dataset objects from JSON file."""
     with open(json_file, 'r') as f:
         return json.load(f)
-
 
 def calculate_experiment(dataset_obj: dict, experiment_index: int, memory_manager: WorkflowMemory):
     """
@@ -386,6 +458,80 @@ def calculate_experiment(dataset_obj: dict, experiment_index: int, memory_manage
         log_file=log_file,
         memory_manager=memory_manager
     )
+
+    # <<< CSV WRITE: START >>>
+    # Normalize optimal_policy into mapping task_id -> location for CSV writer
+    try:
+        raw_policy = result.get("optimal_policy", []) or result.get("recommended_policy", {}) or []
+        placement_map = {}
+        if isinstance(raw_policy, dict):
+            # keys may be strings or ints
+            for k, v in raw_policy.items():
+                try:
+                    placement_map[int(k)] = int(v)
+                except Exception:
+                    # keep raw if cannot cast
+                    placement_map[k] = v
+        elif isinstance(raw_policy, (list, tuple)):
+            # convert list [l1, l2, ...] -> {1: l1, 2: l2, ...}
+            for i, loc in enumerate(raw_policy, start=1):
+                try:
+                    placement_map[i] = int(loc)
+                except Exception:
+                    placement_map[i] = loc
+        else:
+            # unknown policy type - leave empty
+            placement_map = {}
+
+        # Determine best/optimal cost if available (from result or parsed evaluation)
+        # Prefer numeric fields inside result['evaluation'] or fallback to parsed text later
+        optimal_cost = None
+        eval_obj = result.get("evaluation", {})
+        if isinstance(eval_obj, dict):
+            # common keys: 'total_cost', 'U_total', 'best_cost'
+            for k in ("total_cost", "U_total", "best_cost", "cost"):
+                if k in eval_obj:
+                    try:
+                        optimal_cost = float(eval_obj[k])
+                        break
+                    except Exception:
+                        continue
+
+        # fallback: if you parsed evaluation_str below, one of the parsed values will be used later;
+        # but try to get a numeric best_cost from the result string too (if present).
+        if optimal_cost is None:
+            eval_str = result.get("evaluation", "") if isinstance(result.get("evaluation", ""), str) else result.get("evaluation", "")
+            if isinstance(eval_str, str):
+                import re
+                m = re.search(r'U\(w,p\*\)\s*=\s*([\d.]+)', eval_str)
+                if m:
+                    try:
+                        optimal_cost = float(m.group(1))
+                    except:
+                        pass
+
+        # Prepare minimal workflow metadata for the CSV
+        workflow_meta = dataset_obj.get("meta", {})
+        # call save_results_csv (expects helper to be present in file)
+        try:
+            csv_path = save_results_csv(
+                out_dir="./results_csv",
+                workflow_meta=workflow_meta,
+                workflow_dict=workflow_dict,
+                placement_policy=placement_map,
+                optimal_cost=optimal_cost,
+                metrics=eval_obj if isinstance(eval_obj, dict) else {"evaluation": eval_obj}
+            )
+            print(f"✅ Saved CSV for experiment {experiment_id} -> {csv_path}")
+        except NameError:
+            # save_results_csv not defined in this file / scope
+            print("⚠️ save_results_csv is not defined. Skipping CSV write. Please add the helper function.")
+        except Exception as e:
+            print(f"⚠️ Failed to write CSV for experiment {experiment_id}: {e}")
+
+    except Exception as e:
+        print(f"⚠️ Unexpected error while preparing CSV for experiment {experiment_id}: {e}")
+    # <<< CSV WRITE: END >>>
 
     # SAVE TO MEMORY
     optimal_policy = result.get("optimal_policy", [])

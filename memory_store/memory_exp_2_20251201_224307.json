@@ -1,0 +1,58 @@
+{
+  "experiment_id": "exp_2",
+  "timestamp": "2025-12-01T22:43:07.626923",
+  "workflow_features": {
+    "N": 7,
+    "v_mean": 20599206.57142857,
+    "v_std": 9938389.063471157,
+    "v_max": 32600098.0,
+    "v_min": 3538964.0,
+    "edge_count": 6,
+    "edge_density": 0.14285714285714285,
+    "d_mean": 2627096.495469289,
+    "d_std": 3829019.35376705,
+    "d_max": 11158333.489569876,
+    "d_min": 607716.8654137694,
+    "nodes_linear": 1,
+    "nodes_source": 2,
+    "nodes_sink": 3,
+    "critical_path_length": 0
+  },
+  "environment_features": {
+    "location_count": 5,
+    "iot_count": 1,
+    "edge_count": 3,
+    "cloud_count": 1,
+    "dr_mean": 0.0002576991113040736,
+    "dr_std": 0.0007047572081630479,
+    "dr_max": 0.0029902655459276553,
+    "dr_min": 1.2854373822646069e-05,
+    "de_mean": 4.281308441183722e-05,
+    "de_std": 3.860144152787154e-05,
+    "vr_mean": 4.1705773477849356e-08,
+    "vr_std": 3.021004089071564e-08,
+    "ve_mean": 2.750016634308191e-07,
+    "ve_std": 1.7409944733687073e-07,
+    "regime": "network-bound"
+  },
+  "params": {
+    "CT": 0.2,
+    "CE": 1.2,
+    "delta_t": 1,
+    "delta_e": 1
+  },
+  "optimal_policy": [
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4
+  ],
+  "best_cost": 883.163516,
+  "evaluated_policies": 0,
+  "skipped_policies": 0,
+  "summary": "Workflow: 7 tasks\n  - Avg compute: 2.06e+07 cycles (std: 9.94e+06)\n  - Edge density: 14.29% (6 edges)\n  - Avg data dependency: 2.63e+06 bytes\n  - Critical path length: ~0 hops\n  - Structure: Mixed topology\nEnvironment: 5 locations\n  - 3 edge, 1 cloud servers\n  - Avg network latency: 2.58e-04 ms/byte\n  - Avg compute speed: 4.17e-08 ms/cycle\n  - Avg task energy: 2.75e-07 mJ/cycle\n  - Regime: network-bound\nMode: BALANCED",
+  "plan_excerpt": "\n## Chain-of-Thought Reasoning:\nThe Planner Agent's goal is to provide a comprehensive plan for the Evaluator Agent to find the optimal task offloading policy `p = [l_1, l_2, ..., l_N]` that minimizes the total cost `U(w,p)` in a BALANCED mode.\n\nI will follow a Chain-of-Thought approach, breaking down the problem into several analytical steps:\n\n1.  **Understand the Objective**: The primary objective is to minimize `U = delta_t * T + delta_e * E`. Given `delta_t = 1` and `delta_e = 1`, this simpl"
+}

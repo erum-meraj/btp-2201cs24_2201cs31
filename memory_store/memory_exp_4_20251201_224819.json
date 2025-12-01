@@ -1,0 +1,62 @@
+{
+  "experiment_id": "exp_4",
+  "timestamp": "2025-12-01T22:48:19.868697",
+  "workflow_features": {
+    "N": 11,
+    "v_mean": 15787933.545454545,
+    "v_std": 8696607.00463605,
+    "v_max": 26540156.0,
+    "v_min": 3751650.0,
+    "edge_count": 11,
+    "edge_density": 0.1,
+    "d_mean": 3738752.716959043,
+    "d_std": 2476383.338917937,
+    "d_max": 7849983.713743942,
+    "d_min": 697585.3202856784,
+    "nodes_linear": 2,
+    "nodes_source": 4,
+    "nodes_sink": 2,
+    "critical_path_length": 0
+  },
+  "environment_features": {
+    "location_count": 3,
+    "iot_count": 1,
+    "edge_count": 1,
+    "cloud_count": 1,
+    "dr_mean": 0.000751687930015559,
+    "dr_std": 0.0010299834662413916,
+    "dr_max": 0.0024208588010619344,
+    "dr_min": 1.1324594019907426e-05,
+    "de_mean": 5.379135566420549e-05,
+    "de_std": 4.6820926849070036e-05,
+    "vr_mean": 4.340590840557597e-08,
+    "vr_std": 4.013226172392927e-08,
+    "ve_mean": 3.1721071581263835e-07,
+    "ve_std": 2.049889041230054e-07,
+    "regime": "network-bound"
+  },
+  "params": {
+    "CT": 0.2,
+    "CE": 1.2,
+    "delta_t": 1,
+    "delta_e": 1
+  },
+  "optimal_policy": [
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1
+  ],
+  "best_cost": 1990.151372,
+  "evaluated_policies": 0,
+  "skipped_policies": 0,
+  "summary": "Workflow: 11 tasks\n  - Avg compute: 1.58e+07 cycles (std: 8.70e+06)\n  - Edge density: 10.00% (11 edges)\n  - Avg data dependency: 3.74e+06 bytes\n  - Critical path length: ~0 hops\n  - Structure: Mixed topology\nEnvironment: 3 locations\n  - 1 edge, 1 cloud servers\n  - Avg network latency: 7.52e-04 ms/byte\n  - Avg compute speed: 4.34e-08 ms/cycle\n  - Avg task energy: 3.17e-07 mJ/cycle\n  - Regime: network-bound\nMode: BALANCED",
+  "plan_excerpt": "\n## Chain-of-Thought Reasoning:\nThe Planner Agent's role is to analyze the task offloading problem and formulate a comprehensive plan. I will follow the requested structure, breaking down the analysis into Environment, Workflow, Cost Components, Mode-Specific Strategy, Placement Strategy Recommendations, and learning from similar cases.\n\n**1. Environment Analysis:**\n\n*   **Locations:** IOT (0), EDGE (1), CLOUD (2).\n*   **DR (Data Time Consumption - ms/byte):**\n    *   IOT-EDGE (0->1): 1.13e-05 m"
+}
