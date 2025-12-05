@@ -1,17 +1,17 @@
 # main.py - UPDATED: Integrated memory system for learning across experiments
-import os, json, dotenv, csv
+import os, json, dotenv, csv, re
 from datetime import datetime
 from langgraph.graph import StateGraph, END, START
-from agents.planner import PlannerAgent
-from agents.evaluator import EvaluatorAgent
-from agents.output import OutputAgent
+from agents_groq.planner import PlannerAgent
+from agents_groq.evaluator import EvaluatorAgent
+from agents_groq.output import OutputAgent
 from typing import TypedDict, Optional, List, Dict, Tuple, Any
 from core.workflow import Workflow
 from core.environment import Environment
 from core.memory_manager import WorkflowMemory
 
 dotenv.load_dotenv()
-GEMINI_API_KEY = os.getenv("GOOGLE_API_KEY")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
 class AgenticState(TypedDict, total=False):
     query: str
@@ -120,9 +120,9 @@ def initialize_log_file(log_file: str, state_data: dict):
 def build_agentic_workflow(log_file: str = "agent_trace.txt", memory_manager: WorkflowMemory = None):
     workflow = StateGraph(AgenticState)
 
-    planner = PlannerAgent(GEMINI_API_KEY, log_file=log_file, memory_manager=memory_manager) 
-    evaluator = EvaluatorAgent(GEMINI_API_KEY, log_file=log_file)
-    output = OutputAgent(GEMINI_API_KEY, log_file=log_file)
+    planner = PlannerAgent(GROQ_API_KEY, log_file=log_file, memory_manager=memory_manager) 
+    evaluator = EvaluatorAgent(GROQ_API_KEY, log_file=log_file)
+    output = OutputAgent(GROQ_API_KEY, log_file=log_file)
 
     # Add nodes
     workflow.add_node("planner", planner.run)
@@ -426,11 +426,24 @@ def calculate_experiment(dataset_obj: dict, experiment_index: int, memory_manage
     print(f"\n{'='*80}")
     print(f"Running experiment {experiment_index} (ID: {experiment_id})")
     print(f"{'='*80}")
-    print(f"Seed: {dataset_obj['meta']['seed']}")
-    print(f"Tasks: {dataset_obj['meta']['v']}, Edges: {dataset_obj['meta']['edgecount']}\n")
+    
+    # Get metadata with defaults
+    meta = dataset_obj.get('meta', {})
+    seed = meta.get('seed', 'unknown')
+    tasks_count = meta.get('v', 'unknown')
+    edges_count = meta.get('edgecount', 'unknown')
+    
+    print(f"Seed: {seed}")
+    print(f"Tasks: {tasks_count}, Edges: {edges_count}\n")
 
     # PARSE DATASET OBJECT
-    workflow_dict, locations_types, env_dict, params = parse_dataset_object(dataset_obj)
+    try:
+        workflow_dict, locations_types, env_dict, params = parse_dataset_object(dataset_obj)
+    except Exception as e:
+        print(f"❌ Error parsing dataset object: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
     
     # Create Workflow object
     wf = Workflow.from_experiment_dict(workflow_dict)
@@ -502,7 +515,6 @@ def calculate_experiment(dataset_obj: dict, experiment_index: int, memory_manage
         if optimal_cost is None:
             eval_str = result.get("evaluation", "") if isinstance(result.get("evaluation", ""), str) else result.get("evaluation", "")
             if isinstance(eval_str, str):
-                import re
                 m = re.search(r'U\(w,p\*\)\s*=\s*([\d.]+)', eval_str)
                 if m:
                     try:
@@ -547,7 +559,6 @@ def calculate_experiment(dataset_obj: dict, experiment_index: int, memory_manage
     }
     
     # Parse evaluation string to extract metrics
-    import re
     cost_match = re.search(r'U\(w,p\*\)\s*=\s*([\d.]+)', evaluation_str)
     if cost_match:
         evaluation_result["best_cost"] = float(cost_match.group(1))
@@ -626,7 +637,7 @@ if __name__ == "__main__":
     print(f"   Loaded {len(dataset)} experiment configurations\n")
     
     # Limit number of experiments for testing (set to None to run all)
-    threshold = 9
+    threshold = 5
     
     # Iterate over all objects and evaluate each
     for idx, dataset_obj in enumerate(dataset):

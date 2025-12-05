@@ -1,27 +1,30 @@
-from langchain_google_genai import ChatGoogleGenerativeAI
+from groq import Groq
 import re
 
 class BaseAgent:
-    """Base class for all Gemini-powered agents with Chain-of-Thought support."""
+    """Base class for all Groq-powered agents with Chain-of-Thought support."""
 
-    def __init__(self, api_key: str, model_name: str = "models/gemini-2.0-flash-exp", temperature: float = 0.3):
-        self.llm = ChatGoogleGenerativeAI(
-            model=model_name,
-            google_api_key=api_key,
-            temperature=temperature,
-        )
+    def __init__(self, api_key: str, model_name: str = "llama-3.3-70b-versatile", temperature: float = 0.3):
+        self.client = Groq(api_key=api_key)
+        self.model_name = model_name
+        self.temperature = temperature
 
     def _extract_content(self, response):
         """
         Extract text content from LLM response, handling both string and list formats.
         
         Args:
-            response: LLM response object
+            response: Groq response object
             
         Returns:
             String content
         """
-        content = response.content
+        # For Groq API, response is typically response.choices[0].message.content
+        try:
+            content = response.choices[0].message.content
+        except (AttributeError, IndexError, KeyError):
+            # Fallback if structure is different
+            content = str(response)
         
         # Handle list of content blocks (multimodal responses)
         if isinstance(content, list):
@@ -50,7 +53,13 @@ class BaseAgent:
 
     def think(self, prompt: str):
         """Run LLM reasoning and return response."""
-        response = self.llm.invoke(prompt)
+        response = self.client.chat.completions.create(
+            model=self.model_name,
+            messages=[
+                {"role": "user", "content": prompt}
+            ],
+            temperature=self.temperature,
+        )
         return self._extract_content(response)
 
     def think_with_cot(self, prompt: str, return_reasoning: bool = False):
@@ -86,7 +95,13 @@ IMPORTANT: Format your response EXACTLY as shown below, with opening and closing
 
 Do not include any text before <reasoning> or after </answer>.
 """
-        response = self.llm.invoke(cot_prompt)
+        response = self.client.chat.completions.create(
+            model=self.model_name,
+            messages=[
+                {"role": "user", "content": cot_prompt}
+            ],
+            temperature=self.temperature,
+        )
         content = self._extract_content(response)
         
         reasoning_match = re.search(r'<reasoning>(.*?)</reasoning>', content, re.DOTALL)
@@ -132,7 +147,13 @@ IMPORTANT: Format your response EXACTLY as shown below:
 [Your final answer]
 </answer>
 """
-            response = self.llm.invoke(cot_prompt)
+            response = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=[
+                    {"role": "user", "content": cot_prompt}
+                ],
+                temperature=self.temperature,
+            )
             content = self._extract_content(response)
             
             reasoning_match = re.search(r'<reasoning>(.*?)</reasoning>', content, re.DOTALL)

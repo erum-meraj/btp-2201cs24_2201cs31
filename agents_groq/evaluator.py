@@ -4,7 +4,7 @@ import math
 from core.workflow import Workflow
 from core.environment import Environment
 from core.cost_eval import UtilityEvaluator
-from agents.base_agent import BaseAgent
+from agents_groq.base_agent import BaseAgent
 import json
 
 
@@ -145,7 +145,6 @@ Format:
 </policies>
 
 Do NOT output chain-of-thought. Think internally only.
-
 """
         self._log_interaction("EVALUATOR", prompt, None, "PROMPT")
         result = self.think_with_cot(prompt, return_reasoning=True)
