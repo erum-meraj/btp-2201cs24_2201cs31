@@ -1,10 +1,11 @@
 # agents/evaluator.py - FIXED: String key handling for constraints
 import itertools
 import math
+import os
 from core.workflow import Workflow
 from core.environment import Environment
 from core.cost_eval import UtilityEvaluator
-from agents_groq.base_agent import BaseAgent
+from agents.base_agent.base_agent import BaseAgent
 import json
 
 
@@ -18,17 +19,17 @@ class EvaluatorAgent(BaseAgent):
     def _create_environment(self, env_dict: dict) -> Environment:
         """Create Environment object from dictionary."""
         locations_types = env_dict.get('locations', {})
-        DR_map = env_dict.get('DR', {})
-        DE_map = env_dict.get('DE', {})
-        VR_map = env_dict.get('VR', {})
-        VE_map = env_dict.get('VE', {})
+        data_transfer_rate_map = env_dict.get('DR', {})
+        data_energy_map = env_dict.get('DE', {})
+        computation_speed_map = env_dict.get('VR', {})
+        task_energy_map = env_dict.get('VE', {})
         
         return Environment.from_matrices(
             types=locations_types,
-            DR_matrix=DR_map,
-            DE_vector=DE_map,
-            VR_vector=VR_map,
-            VE_vector=VE_map
+            DR_matrix=data_transfer_rate_map,
+            DE_vector=data_energy_map,
+            VR_vector=computation_speed_map,
+            VE_vector=task_energy_map
         )
 
     def _format_env_for_prompt(self, env_dict: dict):
@@ -48,37 +49,37 @@ class EvaluatorAgent(BaseAgent):
             details.append("")
         
         # DR - Data Transfer Time
-        dr = env_dict.get('DR', {})
-        if dr:
+        data_transfer_rates = env_dict.get('DR', {})
+        if data_transfer_rates:
             details.append("Data Transfer Characteristics DR(li, lj) [ms/byte]:")
-            for (src, dst), rate in sorted(dr.items()):
+            for (src, dst), rate in sorted(data_transfer_rates.items()):
                 if src != dst:
                     latency_per_mb = rate * 1e6  # Convert to ms/MB
                     details.append(f"  {src}→{dst}: {rate:.6e} ms/byte ({latency_per_mb:.3f} ms/MB)")
             details.append("")
         
         # DE - Data Energy
-        de = env_dict.get('DE', {})
-        if de:
+        data_energy_consumption = env_dict.get('DE', {})
+        if data_energy_consumption:
             details.append("Data Energy Consumption DE(li) [mJ/byte]:")
-            for loc, coeff in sorted(de.items()):
+            for loc, coeff in sorted(data_energy_consumption.items()):
                 details.append(f"  Location {loc}: {coeff:.6e} mJ/byte")
             details.append("")
         
         # VR - Computation Speed
-        vr = env_dict.get('VR', {})
-        if vr:
+        computation_speeds = env_dict.get('VR', {})
+        if computation_speeds:
             details.append("Task Execution Speed VR(li) [ms/cycle]:")
-            for loc, rate in sorted(vr.items()):
+            for loc, rate in sorted(computation_speeds.items()):
                 ghz = 1.0 / (rate * 1e6) if rate > 0 else float('inf')
                 details.append(f"  Location {loc}: {rate:.6e} ms/cycle (≈{ghz:.1f} GHz)")
             details.append("")
         
         # VE - Task Energy
-        ve = env_dict.get('VE', {})
-        if ve:
+        task_energy_consumption = env_dict.get('VE', {})
+        if task_energy_consumption:
             details.append("Task Energy Consumption VE(li) [mJ/cycle]:")
-            for loc, energy in sorted(ve.items()):
+            for loc, energy in sorted(task_energy_consumption.items()):
                 details.append(f"  Location {loc}: {energy:.6e} mJ/cycle")
         
         return "\n".join(details)
@@ -87,7 +88,7 @@ class EvaluatorAgent(BaseAgent):
         """Use LLM with CoT to generate heuristic guidance for policy search."""
         tasks = workflow_dict.get('tasks', {})
         edges = workflow_dict.get('edges', {})
-        N = workflow_dict.get('N', 0)
+        num_tasks = workflow_dict.get('N', 0)
         
         # FIX(1): use actual location IDs (not 0..n-1)
         locations = env_dict.get('locations', {})
@@ -98,54 +99,33 @@ class EvaluatorAgent(BaseAgent):
         task_details = []
         for task_id in sorted(tasks.keys()):
             task_data = tasks[task_id]
-            v_i = task_data.get('v', 0)
+            cpu_cycles = task_data.get('v', 0)
             parents = [j for (j, k), _ in edges.items() if k == task_id]
             children_deps = [(k, edges[(task_id, k)]) for (j, k), _ in edges.items() if j == task_id]
             
             task_details.append(f"\nTask {task_id}:")
-            task_details.append(f"  v_{task_id} = {v_i:.2e} CPU cycles")
+            task_details.append(f"  v_{task_id} = {cpu_cycles:.2e} CPU cycles")
             if parents:
                 task_details.append(f"  Depends on: Tasks {parents}")
             if children_deps:
                 task_details.append(f"  Data output to:")
-                for k, d_ik in children_deps:
-                    task_details.append(f"    Task {k}: d_{{{task_id},{k}}} = {d_ik:.2e} bytes")
+                for k, data_size in children_deps:
+                    task_details.append(f"    Task {k}: d_{{{task_id},{k}}} = {data_size:.2e} bytes")
         
-        prompt = f"""
-You are helping optimize task offloading decisions for an edge-cloud system following the paper's framework.
-
-## Environment Configuration:
-{env_details}
-
-## Workflow DAG (N = {N} tasks):
-{chr(10).join(task_details)}
-
-## Optimization Parameters:
-{json.dumps(params, indent=2)}
-
-## Planner's Strategic Analysis:
-{plan[:800]}
-
-## Your Task:
-Generate 3-5 intelligent candidate placement policies p = {{l_1, l_2, ..., l_{N}}} using ONLY these location IDs: {location_ids}
-
-Provide candidate policies as lists: [l_1, l_2, ..., l_{N}]
-
-## Concise Output Requirement
-
-Return only:
-- A <summary> (≤ 25 words) giving the main insight
-- A <policies> section listing 3–5 candidate policies
-
-Format:
-<summary>...</summary>
-<policies>
-[p1, p2, ..., pN]
-[p1, p2, ..., pN]
-</policies>
-
-Do NOT output chain-of-thought. Think internally only.
-"""
+        # Load prompt template from file
+        prompt_file_path = os.path.join(os.path.dirname(__file__), 'prompt.md')
+        with open(prompt_file_path, 'r', encoding='utf-8') as f:
+            prompt_template = f.read()
+        
+        prompt = prompt_template.format(
+            env_details=env_details,
+            N=num_tasks,
+            task_details=task_details,
+            params=params,
+            plan=plan,
+            location_ids=location_ids
+        )
+        
         self._log_interaction("EVALUATOR", prompt, None, "PROMPT")
         result = self.think_with_cot(prompt, return_reasoning=True)
         full_response = f"REASONING:\n{result['reasoning']}\n\nCANDIDATE POLICIES:\n{result['answer']}"
@@ -158,11 +138,11 @@ Do NOT output chain-of-thought. Think internally only.
         print("="*60 + "\n")
 
         # FIX(1): validate against actual IDs
-        policies = self._parse_policies_from_text(result['answer'], N, location_ids)
+        policies = self._parse_policies_from_text(result['answer'], num_tasks, location_ids)
         return policies
 
     # FIX(1): change validator to use valid_location_ids
-    def _parse_policies_from_text(self, text: str, n_tasks: int, valid_location_ids):
+    def _parse_policies_from_text(self, text: str, num_tasks: int, valid_location_ids):
         """Extract policy suggestions from LLM text output."""
         import re
         valid = set(valid_location_ids)
@@ -173,7 +153,7 @@ Do NOT output chain-of-thought. Think internally only.
         for match in matches:
             try:
                 policy = [int(x.strip()) for x in match.split(',')]
-                if len(policy) == n_tasks and all(loc in valid for loc in policy):
+                if len(policy) == num_tasks and all(loc in valid for loc in policy):
                     policies.append(tuple(policy))
             except:
                 continue
@@ -216,7 +196,7 @@ Do NOT output chain-of-thought. Think internally only.
         Returns:
             True if policy violates constraints, False otherwise
         """
-        N = len(policy_tuple)
+        num_tasks = len(policy_tuple)
         
         # Normalize fixed constraints (convert string keys to int)
         if fixed:
@@ -231,7 +211,7 @@ Do NOT output chain-of-thought. Think internally only.
             
             # Check fixed constraints
             for task_id, required_loc in normalized_fixed.items():
-                if 1 <= task_id <= N:
+                if 1 <= task_id <= num_tasks:
                     actual_loc = policy_tuple[task_id - 1]
                     if actual_loc != required_loc:
                         return True
@@ -249,7 +229,7 @@ Do NOT output chain-of-thought. Think internally only.
             
             # Check allowed constraints
             for task_id, allowed_set in normalized_allowed.items():
-                if 1 <= task_id <= N:
+                if 1 <= task_id <= num_tasks:
                     actual_loc = policy_tuple[task_id - 1]
                     if actual_loc not in allowed_set:
                         return True
@@ -267,25 +247,25 @@ Do NOT output chain-of-thought. Think internally only.
         workflow = Workflow.from_experiment_dict(workflow_dict)
         env = self._create_environment(env_dict)
         
-        N = workflow.N
+        num_tasks = workflow.N
 
         # FIX(1): derive actual location IDs once
         location_ids = sorted((env_dict.get('locations') or {}).keys())
-        n_locations = len(location_ids)
+        num_locations = len(location_ids)
 
         # Evaluator params
-        CT = params.get('CT', 0.2)
-        CE = params.get('CE', 1.34)
-        delta_t = params.get('delta_t', 1)
-        delta_e = params.get('delta_e', 1)
-        evaluator = UtilityEvaluator(CT=CT, CE=CE, delta_t=delta_t, delta_e=delta_e)
+        time_cost_weight = params.get('CT', 0.2)
+        energy_cost_weight = params.get('CE', 1.34)
+        time_penalty = params.get('delta_t', 1)
+        energy_penalty = params.get('delta_e', 1)
+        evaluator = UtilityEvaluator(CT=time_cost_weight, CE=energy_cost_weight, delta_t=time_penalty, delta_e=energy_penalty)
 
         print(f"\n{'='*60}")
         print(f"EVALUATOR: Searching for optimal offloading policy")
-        print(f"  Tasks (N): {N}")
-        print(f"  Locations: {n_locations} with IDs {location_ids}")
-        print(f"  Cost Model: U(w,p) = {delta_t}*T + {delta_e}*E")
-        print(f"  CT={CT}, CE={CE}")
+        print(f"  Tasks (N): {num_tasks}")
+        print(f"  Locations: {num_locations} with IDs {location_ids}")
+        print(f"  Cost Model: U(w,p) = {time_penalty}*T + {energy_penalty}*E")
+        print(f"  CT={time_cost_weight}, CE={energy_cost_weight}")
         
         # Display constraints if any
         fixed = params.get("fixed_locations", {})
@@ -304,11 +284,11 @@ Do NOT output chain-of-thought. Think internally only.
         # Systematic candidates (FIX(1): use real IDs)
         systematic_candidates = []
         for lid in location_ids:
-            systematic_candidates.append(tuple(lid for _ in range(N)))  # all on each available location
+            systematic_candidates.append(tuple(lid for _ in range(num_tasks)))  # all on each available location
 
         # simple round-robin seeds over actual IDs
-        for start in range(min(n_locations, 3)):
-            cand = tuple(location_ids[(start + i) % n_locations] for i in range(N))
+        for start in range(min(num_locations, 3)):
+            cand = tuple(location_ids[(start + i) % num_locations] for i in range(num_tasks))
             systematic_candidates.append(cand)
 
         # Combine
@@ -316,10 +296,10 @@ Do NOT output chain-of-thought. Think internally only.
 
         # Exhaustive completion (FIX(1): over real IDs)
         max_exhaustive = 10000
-        total_combos = n_locations ** N
+        total_combos = num_locations ** num_tasks
         if total_combos <= max_exhaustive:
             print(f"✓ Problem size allows exhaustive search ({total_combos} combinations)")
-            all_candidates = list(itertools.product(location_ids, repeat=N))
+            all_candidates = list(itertools.product(location_ids, repeat=num_tasks))
             candidates = list(set(candidates + all_candidates))
         else:
             print(f"⚠  Problem too large for exhaustive search ({total_combos} combinations)")
@@ -343,7 +323,7 @@ Do NOT output chain-of-thought. Think internally only.
                 skipped += 1
                 continue
             try:
-                placement_dict = {i: placement_tuple[i-1] for i in range(1, N + 1)}
+                placement_dict = {i: placement_tuple[i-1] for i in range(1, num_tasks + 1)}
                 cost = evaluator.total_offloading_cost(workflow, placement_dict, env)
                 evaluated += 1
                 if cost is None or (isinstance(cost, float) and math.isinf(cost)):

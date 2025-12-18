@@ -2,9 +2,9 @@
 import os, json, dotenv, csv
 from datetime import datetime
 from langgraph.graph import StateGraph, END, START
-from agents.planner import PlannerAgent
-from agents.evaluator import EvaluatorAgent
-from agents.output import OutputAgent
+from agents.planner_agent.planner import PlannerAgent
+from agents.evaluator_agent.evaluator import EvaluatorAgent
+from agents.output_agent.output import OutputAgent
 from typing import TypedDict, Optional, List, Dict, Tuple, Any
 from core.workflow import Workflow
 from core.environment import Environment
@@ -620,18 +620,19 @@ if __name__ == "__main__":
     # ========================================================================
     # LOAD DATASET FROM JSON
     # ========================================================================
-    
+    # Limit number of experiments for testing (set to None to run all)
+    start = 0
+    end  = 10
+
     print("\n📂 Loading dataset from dataset/dataset.json...")
     dataset = load_dataset("dataset/dataset.json")
+    dataset = dataset[start:end] if end is not None else dataset[start:]
     print(f"   Loaded {len(dataset)} experiment configurations\n")
     
-    # Limit number of experiments for testing (set to None to run all)
-    threshold = 9
+    
     
     # Iterate over all objects and evaluate each
     for idx, dataset_obj in enumerate(dataset):
-        if threshold is not None and threshold <= 0:
-            break
         
         try:
             calculate_experiment(dataset_obj, idx, memory_manager)

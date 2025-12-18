@@ -1,3 +1,6 @@
 __pycache__/
 *.py[cod]
 .env
+results_csv/
+workflow_outputs/
+memory_store/

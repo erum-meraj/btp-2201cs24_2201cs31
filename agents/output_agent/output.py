@@ -1,6 +1,7 @@
 # agents/output.py - FULLY ALIGNED with paper specifications
 import json
-from agents_groq.base_agent import BaseAgent
+import os
+from agents.base_agent.base_agent import BaseAgent
 
 
 class OutputAgent(BaseAgent):
@@ -43,70 +44,20 @@ class OutputAgent(BaseAgent):
         # Determine mode
         mode_desc = self._get_mode_description(params)
         
-        prompt = f"""
-You are the Output Agent providing final recommendations for task offloading based on the paper's framework.
-
-## Environment Configuration (Section III-A):
-{env_summary}
-
-## Cost Model Parameters (Section III-C):
-{params_str}
-
-## Optimization Mode:
-{mode_desc}
-
-## Planner's Strategic Analysis:
-{plan[:500]}...
-
-## Evaluator's Result:
-{evaluation}
-
-## Optimal Policy Found:
-{policy_str}
-
-## Task-to-Location Mapping:
-{task_mapping if task_mapping else "No valid policy found"}
-
-## Paper Context:
-The offloading cost U(w, p) is computed using Equation 8:
-  U(w, p) = delta_t * T + delta_e * E
-
-Where:
-- T = CT * Delta_max (time cost via critical path, Eq. 7)
-- E = CE * (ED + EV) (energy cost, Eq. 3)
-  * ED = data communication energy (Eq. 4)
-  * EV = task execution energy (Eq. 5)
-
-Using Chain-of-Thought reasoning, provide a comprehensive explanation:
-
-1. **Why is this policy optimal?**
-   - How does it minimize U(w, p) according to the paper's cost model?
-   - What is the balance between time (T) and energy (E) costs?
-   - How does it leverage the DR, DE, VR, VE parameters?
-
-2. **Cost Analysis**:
-   - Expected time consumption (critical path through delay-DAG)
-   - Expected energy consumption (data + execution)
-   - Improvement over baseline (all-local execution)
-
-3. **Placement Rationale**:
-   - Which tasks are offloaded and why?
-   - Which tasks remain local and why?
-   - How are task dependencies (d_i,j) handled?
-
-4. **Performance Benefits**:
-   - Latency reduction from using faster processors
-   - Energy savings from efficient resource allocation
-   - Network overhead vs. computation savings trade-off
-
-5. **Implementation Considerations**:
-   - Critical path tasks and their placement
-   - Data transfer bottlenecks
-   - Robustness to environment changes
-   - Monitoring and adaptation strategies
-
-Provide your explanation using the paper's notation and terminology.
-"""
+        # Load prompt template from file
+        prompt_file_path = os.path.join(os.path.dirname(__file__), 'output_prompt.md')
+        with open(prompt_file_path, 'r', encoding='utf-8') as f:
+            prompt_template = f.read()
+        
+        prompt = prompt_template.format(
+            env_summary=env_summary,
+            params_str=params_str,
+            mode_desc=mode_desc,
+            plan=plan[:500] + ("..." if len(plan) > 500 else ""),
+            evaluation=evaluation,
+            policy_str=policy_str,
+            task_mapping=task_mapping if task_mapping else "No valid policy found"
+        )
         
         # Log the prompt
         self._log_interaction("OUTPUT", prompt, None, "PROMPT")
@@ -194,15 +145,6 @@ Provide your explanation using the paper's notation and terminology.
         lines.append(f"  delta_t = {params.get('delta_t', 1)}")
         lines.append(f"  delta_e = {params.get('delta_e', 1)}")
         return "\n".join(lines)
-
-    def _get_location_name(self, location: int, loc_type: str = None) -> str:
-        """Convert location ID to human-readable name."""
-        if location == 0:
-            return "IoT Device (Local, l=0)"
-        elif loc_type:
-            return f"{loc_type.capitalize()} Server (l={location})"
-        else:
-            return f"Remote Server (l={location})"
 
     def _get_mode_description(self, params: dict) -> str:
         """Get human-readable mode description following paper."""
