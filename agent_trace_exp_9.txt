@@ -1,0 +1,135 @@
+================================================================================
+MULTI-AGENT TASK OFFLOADING OPTIMIZATION - EXECUTION TRACE
+================================================================================
+Execution Time: 2026-02-16T18:34:30.426842
+================================================================================
+
+================================================================================
+ENVIRONMENT CONFIGURATION
+================================================================================
+
+Locations:
+----------------------------------------
+  Location 0: IOT
+  Location 1: CLOUD
+  Location 2: CLOUD
+  Location 3: CLOUD
+  Location 4: CLOUD
+  Location 5: EDGE
+
+Network Data Time Consumption (DR - ms/byte):
+----------------------------------------
+  Link (0 → 1): 2.897929e-03 ms/byte
+  Link (0 → 2): 2.525093e-03 ms/byte
+  Link (0 → 3): 2.898241e-03 ms/byte
+  Link (0 → 4): 2.867379e-03 ms/byte
+  Link (0 → 5): 1.973397e-05 ms/byte
+  Link (1 → 0): 2.054724e-03 ms/byte
+  Link (1 → 2): 4.454487e-05 ms/byte
+  Link (1 → 3): 5.911137e-05 ms/byte
+  Link (1 → 4): 5.333296e-05 ms/byte
+  Link (1 → 5): 4.768259e-05 ms/byte
+  Link (2 → 0): 2.984790e-03 ms/byte
+  Link (2 → 1): 4.485814e-05 ms/byte
+  Link (2 → 3): 4.556635e-05 ms/byte
+  Link (2 → 4): 4.319780e-05 ms/byte
+  Link (2 → 5): 3.030997e-05 ms/byte
+  Link (3 → 0): 2.151121e-03 ms/byte
+  Link (3 → 1): 4.618933e-05 ms/byte
+  Link (3 → 2): 3.122599e-05 ms/byte
+  Link (3 → 4): 4.423171e-05 ms/byte
+  Link (3 → 5): 4.537488e-05 ms/byte
+  Link (4 → 0): 2.772582e-03 ms/byte
+  Link (4 → 1): 3.298901e-05 ms/byte
+  Link (4 → 2): 5.426510e-05 ms/byte
+  Link (4 → 3): 3.920988e-05 ms/byte
+  Link (4 → 5): 4.594352e-05 ms/byte
+  Link (5 → 0): 1.352105e-05 ms/byte
+  Link (5 → 1): 5.056662e-05 ms/byte
+  Link (5 → 2): 3.982696e-05 ms/byte
+  Link (5 → 3): 4.585525e-05 ms/byte
+  Link (5 → 4): 5.638003e-05 ms/byte
+
+Data Energy Consumption (DE - mJ/byte):
+----------------------------------------
+  Location 0: 1.200000e-04 mJ/byte
+  Location 1: 2.404154e-05 mJ/byte
+  Location 2: 2.086067e-05 mJ/byte
+  Location 3: 2.426374e-05 mJ/byte
+  Location 4: 1.994802e-05 mJ/byte
+  Location 5: 2.434120e-05 mJ/byte
+
+Task Time Consumption (VR - ms/cycle):
+----------------------------------------
+  Location 0: 1.000000e-07 ms/cycle
+  Location 1: 2.407291e-08 ms/cycle
+  Location 2: 2.452667e-08 ms/cycle
+  Location 3: 3.432553e-08 ms/cycle
+  Location 4: 2.621120e-08 ms/cycle
+  Location 5: 1.967954e-08 ms/cycle
+
+Task Energy Consumption (VE - mJ/cycle):
+----------------------------------------
+  Location 0: 6.000000e-07 mJ/cycle
+  Location 1: 1.753875e-07 mJ/cycle
+  Location 2: 2.399760e-07 mJ/cycle
+  Location 3: 1.998020e-07 mJ/cycle
+  Location 4: 1.565245e-07 mJ/cycle
+  Location 5: 1.834283e-07 mJ/cycle
+
+Optimization Parameters:
+----------------------------------------
+  CT (cost per ms): 0.2
+  CE (cost per mJ): 1.2
+  delta_t (time weight): 1
+  delta_e (energy weight): 1
+
+================================================================================
+
+================================================================================
+WORKFLOW CONFIGURATION
+================================================================================
+
+Total Real Tasks (N): 7
+----------------------------------------
+
+Task 1:
+  CPU Cycles (v_1): 3.25e+07 cycles
+  Dependencies:
+    → Task 2: 1.05e+07 bytes
+
+Task 2:
+  CPU Cycles (v_2): 8.13e+06 cycles
+  Dependencies:
+    → Task 3: 2.51e+06 bytes
+    → Task 5: 1.24e+07 bytes
+    → Task 6: 6.93e+05 bytes
+
+Task 3:
+  CPU Cycles (v_3): 8.22e+06 cycles
+  Dependencies: None
+
+Task 4:
+  CPU Cycles (v_4): 1.86e+06 cycles
+  Dependencies:
+    → Task 2: 6.33e+06 bytes
+
+Task 5:
+  CPU Cycles (v_5): 1.27e+07 cycles
+  Dependencies: None
+
+Task 6:
+  CPU Cycles (v_6): 3.22e+07 cycles
+  Dependencies: None
+
+Task 7:
+  CPU Cycles (v_7): 5.07e+06 cycles
+  Dependencies:
+    → Task 2: 2.78e+06 bytes
+
+================================================================================
+
+================================================================================
+AGENT INTERACTIONS
+================================================================================
+

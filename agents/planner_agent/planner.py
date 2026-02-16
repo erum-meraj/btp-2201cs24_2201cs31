@@ -81,23 +81,35 @@ class PlannerAgent(BaseAgent):
             details.append(f"Task {task_id}:")
             details.append(f"  v_{task_id} = {v_i:.2e} CPU cycles")
             
+            # Convert edges list to dict if necessary
+            edges_dict = {}
+            if isinstance(edges, list):
+                # Format: [{u: int, v: int, bytes: float}, ...]
+                for edge in edges:
+                    u = int(edge.get("u"))
+                    v = int(edge.get("v"))
+                    bytes_val = float(edge.get("bytes"))
+                    edges_dict[(u, v)] = bytes_val
+            else:
+                edges_dict = edges
+            
             # Find J_i (parents) and K_i (children)
-            parents = [j for (j, k), _ in edges.items() if k == task_id]
-            children = [k for (j, k), _ in edges.items() if j == task_id]
+            parents = [j for (j, k), _ in edges_dict.items() if k == int(task_id)]
+            children = [k for (j, k), _ in edges_dict.items() if j == int(task_id)]
             
             if parents:
                 details.append(f"  J_{task_id} (parents): {{{', '.join(map(str, parents))}}}")
             else:
-                details.append(f"  J_{task_id} (parents): ∅")
+                details.append(f"  J_{task_id} (parents): empty")
             
             if children:
                 details.append(f"  K_{task_id} (children): {{{', '.join(map(str, children))}}}")
                 details.append(f"  Data dependencies d_{{i,j}}:")
                 for k in children:
-                    d_ij = edges.get((task_id, k), 0)
+                    d_ij = edges_dict.get((int(task_id), k), 0)
                     details.append(f"    d_{{{task_id},{k}}} = {d_ij:.2e} bytes")
             else:
-                details.append(f"  K_{task_id} (children): ∅")
+                details.append(f"  K_{task_id} (children): empty")
             
             details.append("")
         

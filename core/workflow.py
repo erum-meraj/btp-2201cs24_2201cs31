@@ -49,15 +49,43 @@ class Workflow:
     def from_experiment_dict(cls, workflow_dict: Dict) -> "Workflow":
         """
         Build workflow object directly from the input structure defined in the paper.
+        Handles multiple dataset formats:
+        - Tasks with string keys ("1", "2") or integer keys
+        - Edges as dict with tuple keys OR list of {u, v, bytes} objects
         """
         obj = cls()
 
-        tasks_map: Dict[int, Dict[str, float]] = workflow_dict["tasks"]
-        edges_map: Dict[Tuple[int, int], float] = workflow_dict.get("edges", {})
+        tasks_raw = workflow_dict.get("tasks", {})
+        edges_raw = workflow_dict.get("edges", {})
         N: int = int(workflow_dict["N"])
 
         if N <= 0:
             raise ValueError("N must be >= 1.")
+
+        # --- Normalize tasks: convert string keys to integers ---
+        tasks_map: Dict[int, Dict[str, float]] = {}
+        for key, task_data in tasks_raw.items():
+            task_id = int(key)
+            tasks_map[task_id] = task_data
+
+        # --- Normalize edges: convert list format to dict format ---
+        edges_map: Dict[Tuple[int, int], float] = {}
+        if isinstance(edges_raw, list):
+            # Format: [{u: int, v: int, bytes: float}, ...]
+            for edge in edges_raw:
+                u = int(edge.get("u"))
+                v = int(edge.get("v"))
+                bytes_val = float(edge.get("bytes"))
+                edges_map[(u, v)] = bytes_val
+        elif isinstance(edges_raw, dict):
+            # Format: {(i,j): float, ...} or {"i,j": float, ...}
+            for key, value in edges_raw.items():
+                if isinstance(key, tuple):
+                    edges_map[key] = float(value)
+                else:
+                    # Parse string key like "1,2" to tuple
+                    parts = str(key).split(",")
+                    edges_map[(int(parts[0]), int(parts[1]))] = float(value)
 
         # --- Create entry/exit ---
         entry_id, exit_id = 0, N + 1
@@ -65,7 +93,16 @@ class Workflow:
         exit_task = Task(task_id=exit_id, v_i=1.0, deps={})
 
         # --- Create real tasks ---
-        id_to_task: Dict[int, Task] = {i: Task(i, float(tasks_map[i]["v"])) for i in range(1, N + 1)}
+        # If tasks_map is empty or incomplete, generate default CPU cycle values
+        id_to_task: Dict[int, Task] = {}
+        for i in range(1, N + 1):
+            if i in tasks_map and "v" in tasks_map[i]:
+                v_i = float(tasks_map[i]["v"])
+            else:
+                # Generate default CPU cycle value (1e6 - 35e6 range, similar to dag_generator)
+                import random
+                v_i = float(random.randint(1_000_000, 35_000_000))
+            id_to_task[i] = Task(i, v_i)
 
         # --- Assign edges ---
         provided_entry, provided_exit = set(), set()

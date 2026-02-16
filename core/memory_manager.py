@@ -26,11 +26,23 @@ class WorkflowMemory:
             Dictionary with workflow characteristics
         """
         tasks = workflow_dict.get('tasks', {})
-        edges = workflow_dict.get('edges', {})
+        edges_raw = workflow_dict.get('edges', {})
         N = workflow_dict.get('N', 0)
         
         if N == 0 or not tasks:
             return {}
+        
+        # Convert edges list to dict if necessary
+        edges = {}
+        if isinstance(edges_raw, list):
+            # Format: [{u: int, v: int, bytes: float}, ...]
+            for edge in edges_raw:
+                u = int(edge.get("u"))
+                v = int(edge.get("v"))
+                bytes_val = float(edge.get("bytes"))
+                edges[(u, v)] = bytes_val
+        elif isinstance(edges_raw, dict):
+            edges = edges_raw
         
         # Compute size statistics
         v_values = [t.get('v', 0) for t in tasks.values()]
@@ -283,7 +295,7 @@ class WorkflowMemory:
         with open(filepath, 'w') as f:
             json.dump(memory_record, f, indent=2)
         
-        print(f"💾 Saved execution memory to: {filepath}")
+        print(f"Saved execution memory to: {filepath}")
         return str(filepath)
     
     def compute_feature_vector(self, wf_features: dict, env_features: dict) -> np.ndarray:
@@ -346,10 +358,10 @@ class WorkflowMemory:
         memory_files = list(self.memory_dir.glob("memory_*.json"))
         
         if not memory_files:
-            print("📭 No historical executions found in memory.")
+            print("No historical executions found in memory.")
             return []
         
-        print(f"🔍 Searching through {len(memory_files)} historical executions...")
+        print(f"Searching through {len(memory_files)} historical executions...")
         
         # Compute similarity for each memory
         similarities = []
@@ -384,7 +396,7 @@ class WorkflowMemory:
                     'memory_record': memory_record
                 })
             except Exception as e:
-                print(f"⚠️  Error loading {filepath}: {e}")
+                print(f"Error loading {filepath}: {e}")
                 continue
         
         # Sort by similarity (lower is better)
@@ -394,7 +406,7 @@ class WorkflowMemory:
         top_similar = similarities[:top_k]
         
         if top_similar:
-            print(f"✅ Found {len(top_similar)} similar executions:")
+            print(f"Found {len(top_similar)} similar executions:")
             for i, item in enumerate(top_similar, 1):
                 exp_id = item['memory_record'].get('experiment_id', 'unknown')
                 sim_score = item['similarity']
