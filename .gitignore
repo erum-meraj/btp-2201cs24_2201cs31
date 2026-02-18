@@ -5,3 +5,4 @@ results_csv/
 workflow_outputs/
 memory_store/
 trace_files/
+.DS_Store
