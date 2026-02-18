@@ -2,7 +2,7 @@
 import json
 import os
 from agents.base_agent.base_agent import BaseAgent
-
+from core.logger import get_logger
 
 class OutputAgent(BaseAgent):
     def __init__(self, api_key: str, log_file: str = "agent_trace.txt"):
@@ -181,22 +181,26 @@ class OutputAgent(BaseAgent):
             return f"CUSTOM MODE: U(w,p) = {delta_t}*T + {delta_e}*E"
 
     def _log_interaction(self, agent: str, prompt: str, response: str, msg_type: str):
-        """Log agent interactions to file."""
-        with open(self.log_file, "a", encoding="utf-8") as f:
+        """Log agent interactions using structured logging."""
+        try:
+            
+            logger = get_logger(self.log_file)
+            
             if msg_type == "PROMPT":
-                f.write("\n" + "=" * 80 + "\n")
-                f.write(f"{agent} AGENT - PROMPT\n")
-                f.write("=" * 80 + "\n")
-                f.write(prompt)
-                f.write("\n" + "=" * 80 + "\n\n")
+                logger.llm_call(agent, prompt[:200] if prompt else "")
             elif msg_type == "RESPONSE":
-                f.write("\n" + "=" * 80 + "\n")
-                f.write(f"{agent} AGENT - RESPONSE\n")
-                f.write("=" * 80 + "\n")
-                f.write(response)
-                f.write("\n" + "=" * 80 + "\n\n")
+                logger.llm_response(agent, response[:200] if response else "")
+        except ImportError:
+            pass
 
     def run(self, state: dict):
+        try:
+            
+            logger = get_logger(self.log_file)
+            logger.output_agent("Formatting final output")
+        except ImportError:
+            logger = None
+            
         plan = state.get("plan", "")
         evaluation = state.get("evaluation", "")
         optimal_policy = state.get("optimal_policy", [])
@@ -208,10 +212,7 @@ class OutputAgent(BaseAgent):
             plan, evaluation, optimal_policy, workflow_dict, env_dict, params
         )
 
-        print("\n" + "=" * 60)
-        print("FINAL OUTPUT (with CoT explanation):")
-        print("=" * 60)
-        print(json.dumps(json.loads(output), indent=2))
-        print("=" * 60 + "\n")
+        if logger:
+            logger.output_agent(f"Output generated with {len(optimal_policy)} task assignments")
 
         return {**state, "output": output}

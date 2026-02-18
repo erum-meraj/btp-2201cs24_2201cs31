@@ -16,7 +16,7 @@ from agents.evaluator_agent.candidate_generator.candidate_generator import (
 )
 from agents.evaluator_agent.tools.utility_function import UtilityFunctionTool
 from agents.evaluator_agent.weak_solver.weak_solver import WeakSolverTool
-
+from core.logger import get_logger
 
 class EvaluatorAgent:
     """
@@ -72,6 +72,13 @@ class EvaluatorAgent:
         Returns:
             Updated state with evaluation, optimal_policy, best_cost
         """
+        try:
+            
+            logger = get_logger(self.log_file)
+            logger.evaluator("Starting policy search and evaluation")
+        except ImportError:
+            logger = None
+            
         # Extract state components
         workflow_dict = state.get("workflow")
         env_dict = state.get("env", {})
@@ -94,17 +101,15 @@ class EvaluatorAgent:
             )
             optimal_policy = []
             best_cost = float("inf")
+            if logger:
+                logger.warning("Evaluator", evaluation)
         else:
             evaluation = f"Optimal policy found: U(w,p*) = {result['best_cost']:.6f}"
             optimal_policy = list(result["best_policy"])
             best_cost = result["best_cost"]
-
-        print(f"\n{'='*60}")
-        print(f"EVALUATION COMPLETE:")
-        print(f"  {evaluation}")
-        print(f"  Evaluated: {result['evaluated']} policies")
-        print(f"  Skipped: {result['skipped']} policies")
-        print(f"{'='*60}\n")
+            if logger:
+                logger.evaluator(f"Optimal policy: {optimal_policy} | Cost: {best_cost:.6f}")
+                logger.evaluator(f"Search complete: {result['evaluated']} evaluated, {result['skipped']} skipped")
 
         return {
             **state,

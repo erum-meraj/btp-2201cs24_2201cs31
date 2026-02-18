@@ -1,8 +1,6 @@
-# agents/planner.py - UPDATED with memory-based few-shot prompting
-import json
 import os
 from agents.base_agent.base_agent import BaseAgent
-
+from core.logger import get_logger
 
 class PlannerAgent(BaseAgent):
     """Planner agent with Chain-of-Thought reasoning and memory-based few-shot prompting."""
@@ -217,39 +215,44 @@ Apply these insights to guide your analysis of the current scenario.
         return full_response
 
     def _log_interaction(self, agent: str, prompt: str, response: str, msg_type: str):
-        """Log agent interactions to file."""
-        with open(self.log_file, "a", encoding="utf-8") as f:
+        """Log agent interactions using structured logging."""
+        try:
+            
+            logger = get_logger(self.log_file)
+            
             if msg_type == "PROMPT":
-                f.write("\n" + "=" * 80 + "\n")
-                f.write(f"{agent} AGENT - PROMPT\n")
-                f.write("=" * 80 + "\n")
-                f.write(prompt)
-                f.write("\n" + "=" * 80 + "\n\n")
+                logger.llm_call(agent, prompt[:200] if prompt else "")
             elif msg_type == "RESPONSE":
-                f.write("\n" + "=" * 80 + "\n")
-                f.write(f"{agent} AGENT - RESPONSE\n")
-                f.write("=" * 80 + "\n")
-                f.write(response)
-                f.write("\n" + "=" * 80 + "\n\n")
+                logger.llm_response(agent, response[:200] if response else "")
+        except ImportError:
+            # Fallback to basic logging if agentic_logger not available
+            pass
 
     def run(self, state: dict):
         """
         The PlannerAgent generates a plan based on the environment,
         using Chain-of-Thought reasoning and memory-based few-shot learning.
         """
+        try:
+            
+            logger = get_logger(self.log_file)
+            logger.planner("Starting strategic analysis")
+        except ImportError:
+            logger = None
+        
         env = state.get("env", {})
         workflow = state.get("workflow", {})
         params = state.get("params", {})
-
+        
+        if logger:
+            logger.planner(f"Analyzing {workflow.get('N', 0)} tasks across {len(env.get('locations', {}))} locations")
+        
         plan = self.create_plan(env, workflow, params)
 
         new_state = dict(state)
         new_state["plan"] = plan
-
-        print("\n" + "=" * 60)
-        print("PLANNER OUTPUT (with CoT reasoning + Few-Shot Learning):")
-        print("=" * 60)
-        print(plan[:500] + "..." if len(plan) > 500 else plan)
-        print("=" * 60 + "\n")
+        
+        if logger:
+            logger.planner("Strategic plan generated successfully")
 
         return new_state
