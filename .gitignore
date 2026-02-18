@@ -4,4 +4,4 @@ __pycache__/
 results_csv/
 workflow_outputs/
 memory_store/
-agent_trace*
+trace_files/

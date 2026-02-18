@@ -16,6 +16,7 @@ import random
 import uuid
 from typing import List, Dict, Any, Tuple
 
+
 def build_location_types(num_remote: int) -> Dict[int, str]:
     """
     Randomly assign device types to remote locations.
@@ -49,10 +50,7 @@ def build_location_types(num_remote: int) -> Dict[int, str]:
 
 
 def make_instance_smallvalues(
-    v: int,
-    edge_prob: float,
-    num_remote: int,
-    seed: int
+    v: int, edge_prob: float, num_remote: int, seed: int
 ) -> Dict[str, Any]:
     """
     Create a single instance:
@@ -97,41 +95,51 @@ def make_instance_smallvalues(
     for lvl in range(1, height):
         for i in range(lvlcount[lvl]):
             node = grid[lvl][i]
-            prev_cnt = lvlcount[lvl-1]
-            parent = grid[lvl-1][0] if prev_cnt == 1 else grid[lvl-1][rng.randint(0, prev_cnt-1)]
+            prev_cnt = lvlcount[lvl - 1]
+            parent = (
+                grid[lvl - 1][0]
+                if prev_cnt == 1
+                else grid[lvl - 1][rng.randint(0, prev_cnt - 1)]
+            )
             parents[node].append(parent)
             children[parent].append(node)
 
     # ensure every non-last-level node has at least one child
-    for lvl in range(0, height-1):
+    for lvl in range(0, height - 1):
         for i in range(lvlcount[lvl]):
             node = grid[lvl][i]
             if len(children[node]) == 0:
-                nxt_cnt = lvlcount[lvl+1]
-                chosen = grid[lvl+1][0] if nxt_cnt == 1 else grid[lvl+1][rng.randint(0, nxt_cnt-1)]
+                nxt_cnt = lvlcount[lvl + 1]
+                chosen = (
+                    grid[lvl + 1][0]
+                    if nxt_cnt == 1
+                    else grid[lvl + 1][rng.randint(0, nxt_cnt - 1)]
+                )
                 children[node].append(chosen)
                 parents[chosen].append(node)
 
     # extra random edges between consecutive levels
-    for lvl in range(0, height-1):
+    for lvl in range(0, height - 1):
         for i in range(lvlcount[lvl]):
             node = grid[lvl][i]
-            for j in range(lvlcount[lvl+1]):
-                child = grid[lvl+1][j]
+            for j in range(lvlcount[lvl + 1]):
+                child = grid[lvl + 1][j]
                 if (rng.random() < edge_prob) and (child not in children[node]):
                     children[node].append(child)
                     parents[child].append(node)
 
     # collect edges list as dict keyed by tuple (u,v) -> bytes
-    edges_dict: Dict[Tuple[int,int], float] = {}
+    edges_dict: Dict[Tuple[int, int], float] = {}
     for u, chs in children.items():
         for v_ in chs:
             # pick size clustered across small/medium/large as in your earlier script
-            size = rng.choice([
-                rng.uniform(0.5e6, 1.5e6),
-                rng.uniform(1.5e6, 3.0e6),
-                rng.uniform(3.0e6, 15.0e6)
-            ])
+            size = rng.choice(
+                [
+                    rng.uniform(0.5e6, 1.5e6),
+                    rng.uniform(1.5e6, 3.0e6),
+                    rng.uniform(3.0e6, 15.0e6),
+                ]
+            )
             edges_dict[(int(u), int(v_))] = float(size)
 
     edgecount = len(edges_dict)
@@ -148,7 +156,7 @@ def make_instance_smallvalues(
 
     # --- ENV maps (produce full n x n DR matrix) ---
     locations = list(range(0, num_remote + 1))  # 0..num_remote inclusive
-    DR_map: Dict[Tuple[int,int], float] = {}
+    DR_map: Dict[Tuple[int, int], float] = {}
     DE_map: Dict[int, float] = {}
     VR_map: Dict[int, float] = {}
     VE_map: Dict[int, float] = {}
@@ -162,19 +170,25 @@ def make_instance_smallvalues(
     for a in locations:
         for b in locations:
             if a == b:
-                DR_map[(a,b)] = 0.0
+                DR_map[(a, b)] = 0.0
             else:
                 # IoT index is 0
-                if (a == 0 and (location_types.get(b, "") == "cloud")) or (b == 0 and (location_types.get(a, "") == "cloud")):
+                if (a == 0 and (location_types.get(b, "") == "cloud")) or (
+                    b == 0 and (location_types.get(a, "") == "cloud")
+                ):
                     # IoT <-> Cloud slow path
-                    DR_map[(a,b)] = float(rng.uniform(1.5e-3, 3.0e-3))  # ~0.0015 - 0.003 ms/byte
+                    DR_map[(a, b)] = float(
+                        rng.uniform(1.5e-3, 3.0e-3)
+                    )  # ~0.0015 - 0.003 ms/byte
                 elif a == 0 or b == 0:
                     # IoT <-> Edge (fast-ish)
-                    DR_map[(a,b)] = float(rng.uniform(0.8e-5, 2.0e-5))   # ~0.8e-5 - 2.0e-5 ms/byte
+                    DR_map[(a, b)] = float(
+                        rng.uniform(0.8e-5, 2.0e-5)
+                    )  # ~0.8e-5 - 2.0e-5 ms/byte
                 else:
                     # edge <-> edge or edge <-> cloud (inter-remote)
                     # choose in a slightly wider band
-                    DR_map[(a,b)] = float(rng.uniform(3.0e-5, 6.0e-5))
+                    DR_map[(a, b)] = float(rng.uniform(3.0e-5, 6.0e-5))
 
     # DE (mJ/byte) per loc - use example values
     for l in locations:
@@ -206,28 +220,29 @@ def make_instance_smallvalues(
         "v": v,
         "edge_prob": edge_prob,
         "num_remote": num_remote,
-        "edgecount": edgecount
+        "edgecount": edgecount,
     }
 
     # In-memory instance uses tuple keys for DR_map and edge dict for correctness.
     instance_in_memory = {
         "workflow": {
-            "tasks": tasks,              # int-keyed dict
-            "edges": edges_dict,         # tuple-keyed dict in-memory
-            "N": N
+            "tasks": tasks,  # int-keyed dict
+            "edges": edges_dict,  # tuple-keyed dict in-memory
+            "N": N,
         },
         "location_types": location_types,
         "env": {
-            "DR": DR_map,               # tuple-keyed dict in-memory (n x n)
+            "DR": DR_map,  # tuple-keyed dict in-memory (n x n)
             "DE": DE_map,
             "VR": VR_map,
-            "VE": VE_map
+            "VE": VE_map,
         },
         "costs": costs,
         "mode": mode,
-        "meta": meta
+        "meta": meta,
     }
     return instance_in_memory
+
 
 # -------------------------
 # JSON serialization helpers
@@ -257,7 +272,7 @@ def serialize_instance_for_json(inst: Dict[str, Any]) -> Dict[str, Any]:
                     u, v = u_s, v_s
             else:
                 u, v = k, None
-        edges_list.append({"u": int(u), "v": int(v), "bytes": float(bytes_val)}) # type: ignore
+        edges_list.append({"u": int(u), "v": int(v), "bytes": float(bytes_val)})  # type: ignore
 
     # DR map: convert (i,j) tuple keys to "i,j" strings for JSON safety
     DR_src = inst["env"]["DR"]
@@ -280,9 +295,10 @@ def serialize_instance_for_json(inst: Dict[str, Any]) -> Dict[str, Any]:
         "env": {"DR": DR_json, "DE": DE_json, "VR": VR_json, "VE": VE_json},
         "costs": inst.get("costs", {}),
         "mode": inst.get("mode", {}),
-        "meta": inst.get("meta", {})
+        "meta": inst.get("meta", {}),
     }
     return out
+
 
 def deserialize_env_from_json(env_json: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -308,6 +324,7 @@ def deserialize_env_from_json(env_json: Dict[str, Any]) -> Dict[str, Any]:
 
     return {"DR": DR, "DE": DE, "VR": VR, "VE": VE}
 
+
 # -------------------------
 # Dataset generation driver
 # -------------------------
@@ -322,7 +339,7 @@ def generate_dataset(
     edge_prob: float,
     min_remote: int,
     max_remote: int,
-    seed: int
+    seed: int,
 ):
     """
     Generates `count` instances. For each instance, randomly pick num_remote in [min_remote, max_remote].
@@ -335,7 +352,9 @@ def generate_dataset(
         s = seed + i
         # pick num_remote per-instance (at least 0)
         num_remote = rng.randint(min_remote, max_remote)
-        inst = make_instance_smallvalues(v=v, edge_prob=edge_prob, num_remote=num_remote, seed=s)
+        inst = make_instance_smallvalues(
+            v=v, edge_prob=edge_prob, num_remote=num_remote, seed=s
+        )
         # add primary keys and meta
         inst_id = str(uuid.uuid4())
         inst_pk = i
@@ -362,7 +381,7 @@ def generate_dataset(
 if __name__ == "__main__":
     p = argparse.ArgumentParser(
         description="Generate DAG dataset. Use either --num_remote (fixed per dataset) "
-                    "or --min_remote/--max_remote (randomize per-instance)."
+        "or --min_remote/--max_remote (randomize per-instance)."
     )
     p.add_argument("--out", type=str, default="dataset.json")
     p.add_argument("--count", type=int, default=50)
@@ -371,13 +390,25 @@ if __name__ == "__main__":
     p.add_argument("--edge_prob", type=float, default=0.25)
 
     # Two mutually-supporting ways to specify remotes:
-    p.add_argument("--num_remote", type=int, default=None,
-                   help="(optional) FIXED number of remote locations for all instances. "
-                        "If provided, overrides min_remote/max_remote (legacy mode).")
-    p.add_argument("--min_remote", type=int, default=1,
-                   help="Minimum number of remote locations (used when --num_remote not provided).")
-    p.add_argument("--max_remote", type=int, default=8,
-                   help="Maximum number of remote locations (used when --num_remote not provided).")
+    p.add_argument(
+        "--num_remote",
+        type=int,
+        default=None,
+        help="(optional) FIXED number of remote locations for all instances. "
+        "If provided, overrides min_remote/max_remote (legacy mode).",
+    )
+    p.add_argument(
+        "--min_remote",
+        type=int,
+        default=1,
+        help="Minimum number of remote locations (used when --num_remote not provided).",
+    )
+    p.add_argument(
+        "--max_remote",
+        type=int,
+        default=8,
+        help="Maximum number of remote locations (used when --num_remote not provided).",
+    )
 
     p.add_argument("--seed", type=int, default=42)
     args = p.parse_args()
@@ -396,7 +427,9 @@ if __name__ == "__main__":
             raise SystemExit("min_remote must be >= 0")
         if max_remote < min_remote:
             raise SystemExit("max_remote must be >= min_remote")
-        print(f"[INFO] Running in randomized mode: min_remote = {min_remote}, max_remote = {max_remote}")
+        print(
+            f"[INFO] Running in randomized mode: min_remote = {min_remote}, max_remote = {max_remote}"
+        )
 
     generate_dataset(
         out_file=args.out,
@@ -406,5 +439,5 @@ if __name__ == "__main__":
         edge_prob=args.edge_prob,
         min_remote=min_remote,
         max_remote=max_remote,
-        seed=args.seed
+        seed=args.seed,
     )

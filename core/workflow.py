@@ -12,6 +12,7 @@ class Task:
       • v_i  : CPU cycles
       • deps : {j: d_{i,j}} where d_{i,j} is data size in bytes
     """
+
     task_id: int
     v_i: float
     deps: Dict[int, float] = field(default_factory=dict)
@@ -101,6 +102,7 @@ class Workflow:
             else:
                 # Generate default CPU cycle value (1e6 - 35e6 range, similar to dag_generator)
                 import random
+
                 v_i = float(random.randint(1_000_000, 35_000_000))
             id_to_task[i] = Task(i, v_i)
 

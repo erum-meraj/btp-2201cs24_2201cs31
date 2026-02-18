@@ -11,6 +11,7 @@ class Location:
     l = 0 corresponds to the IoT device (mandatory).
     type ∈ {'iot', 'edge', 'cloud'} is informational.
     """
+
     l: int
     type: str  # 'iot' | 'edge' | 'cloud'
     metadata: Dict = field(default_factory=dict)
@@ -28,6 +29,7 @@ class Environment:
       • l = 0 denotes the IoT device; li=0 means no offloading (local).
       • The network/compute model is defined by the four matrices {DR, DE, VR, VE}.
     """
+
     def __init__(
         self,
         locations: Dict[int, Location],
@@ -87,7 +89,11 @@ class Environment:
         if 0 not in self.locations or self.locations[0].type != "iot":
             raise ValueError("Environment must contain l=0 of type 'iot' (IoT device).")
         # Ensure all locations have DE, VR, VE defined
-        missing = [l for l in self.locations if l not in self._DE or l not in self._VR or l not in self._VE]
+        missing = [
+            l
+            for l in self.locations
+            if l not in self._DE or l not in self._VR or l not in self._VE
+        ]
         if missing:
             raise ValueError(f"Missing DE/VR/VE entries for locations: {missing}")
 

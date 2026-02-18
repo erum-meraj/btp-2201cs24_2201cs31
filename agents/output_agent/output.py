@@ -9,46 +9,59 @@ class OutputAgent(BaseAgent):
         super().__init__(api_key)
         self.log_file = log_file
 
-    def format_output(self, plan: str, evaluation: str, optimal_policy, 
-                     workflow_dict: dict = None, env_dict: dict = None, params: dict = None):
+    def format_output(
+        self,
+        plan: str,
+        evaluation: str,
+        optimal_policy,
+        workflow_dict: dict = None,
+        env_dict: dict = None,
+        params: dict = None,
+    ):
         policy_str = str(optimal_policy) if optimal_policy else "[]"
-        
+
         # Build task mapping following paper notation
         task_mapping = ""
         if optimal_policy and workflow_dict:
-            tasks = workflow_dict.get('tasks', {})
-            locations = env_dict.get('locations', {}) if env_dict else {}
-            
+            tasks = workflow_dict.get("tasks", {})
+            locations = env_dict.get("locations", {}) if env_dict else {}
+
             mapping_lines = []
             mapping_lines.append("Optimal Placement Policy p* = {l_1, l_2, ..., l_N}:")
             mapping_lines.append("")
-            
+
             for i, loc in enumerate(optimal_policy, start=1):
                 if i in tasks:
-                    loc_type = locations.get(loc, 'unknown')
-                    v_i = tasks[i].get('v', 0)
-                    
+                    loc_type = locations.get(loc, "unknown")
+                    v_i = tasks[i].get("v", 0)
+
                     if loc == 0:
-                        mapping_lines.append(f"  Task {i}: l_{i} = {loc} (IoT - Local Execution)")
+                        mapping_lines.append(
+                            f"  Task {i}: l_{i} = {loc} (IoT - Local Execution)"
+                        )
                     else:
-                        mapping_lines.append(f"  Task {i}: l_{i} = {loc} ({loc_type.upper()} Server)")
-                    
+                        mapping_lines.append(
+                            f"  Task {i}: l_{i} = {loc} ({loc_type.upper()} Server)"
+                        )
+
                     mapping_lines.append(f"    v_{i} = {v_i:.2e} CPU cycles")
-            
+
             task_mapping = "\n".join(mapping_lines)
-        
+
         # Format environment summary with paper notation
-        env_summary = self._format_env_summary(env_dict) if env_dict else "No environment details"
+        env_summary = (
+            self._format_env_summary(env_dict) if env_dict else "No environment details"
+        )
         params_str = self._format_params(params) if params else "No parameters"
-        
+
         # Determine mode
         mode_desc = self._get_mode_description(params)
-        
+
         # Load prompt template from file
-        prompt_file_path = os.path.join(os.path.dirname(__file__), 'output_prompt.md')
-        with open(prompt_file_path, 'r', encoding='utf-8') as f:
+        prompt_file_path = os.path.join(os.path.dirname(__file__), "output_prompt.md")
+        with open(prompt_file_path, "r", encoding="utf-8") as f:
             prompt_template = f.read()
-        
+
         prompt = prompt_template.format(
             env_summary=env_summary,
             params_str=params_str,
@@ -56,19 +69,21 @@ class OutputAgent(BaseAgent):
             plan=plan[:500] + ("..." if len(plan) > 500 else ""),
             evaluation=evaluation,
             policy_str=policy_str,
-            task_mapping=task_mapping if task_mapping else "No valid policy found"
+            task_mapping=task_mapping if task_mapping else "No valid policy found",
         )
-        
+
         # Log the prompt
         self._log_interaction("OUTPUT", prompt, None, "PROMPT")
-        
+
         result = self.think_with_cot(prompt, return_reasoning=True)
-        
-        full_response = f"REASONING:\n{result['reasoning']}\n\nEXPLANATION:\n{result['answer']}"
-        
+
+        full_response = (
+            f"REASONING:\n{result['reasoning']}\n\nEXPLANATION:\n{result['answer']}"
+        )
+
         # Log the response
         self._log_interaction("OUTPUT", None, full_response, "RESPONSE")
-        
+
         # Construct comprehensive output
         output = {
             "plan_summary": plan[:500] + ("..." if len(plan) > 500 else ""),
@@ -78,26 +93,26 @@ class OutputAgent(BaseAgent):
             "optimization_mode": mode_desc,
             "cost_model": "U(w,p) = delta_t * T + delta_e * E (Equation 8)",
             "confidence": "High" if optimal_policy else "Low",
-            "reasoning": result['reasoning'],
-            "explanation": result['answer']
+            "reasoning": result["reasoning"],
+            "explanation": result["answer"],
         }
-        
+
         return json.dumps(output, indent=2)
 
     def _format_env_summary(self, env_dict: dict):
         """Format environment summary with paper notation."""
         lines = []
-        
+
         # Locations
-        locations = env_dict.get('locations', {})
+        locations = env_dict.get("locations", {})
         if locations:
             lines.append("Locations (l):")
             for loc_id, loc_type in sorted(locations.items()):
                 lines.append(f"  l={loc_id}: {loc_type.upper()}")
             lines.append("")
-        
+
         # DR - Data Transfer Time
-        dr = env_dict.get('DR', {})
+        dr = env_dict.get("DR", {})
         if dr:
             lines.append("DR(li, lj) - Data Time Consumption [ms/byte]:")
             sample_count = 0
@@ -105,33 +120,35 @@ class OutputAgent(BaseAgent):
                 if src != dst and sample_count < 5:
                     lines.append(f"  DR({src},{dst}) = {rate:.6e} ms/byte")
                     sample_count += 1
-            if len([1 for (s,d) in dr.keys() if s!=d]) > 5:
-                lines.append(f"  ... ({len([1 for (s,d) in dr.keys() if s!=d]) - 5} more)")
+            if len([1 for (s, d) in dr.keys() if s != d]) > 5:
+                lines.append(
+                    f"  ... ({len([1 for (s,d) in dr.keys() if s!=d]) - 5} more)"
+                )
             lines.append("")
-        
+
         # DE - Data Energy
-        de = env_dict.get('DE', {})
+        de = env_dict.get("DE", {})
         if de:
             lines.append("DE(li) - Data Energy Consumption [mJ/byte]:")
             for loc, coeff in sorted(de.items()):
                 lines.append(f"  DE({loc}) = {coeff:.6e} mJ/byte")
             lines.append("")
-        
+
         # VR - Task Execution Time
-        vr = env_dict.get('VR', {})
+        vr = env_dict.get("VR", {})
         if vr:
             lines.append("VR(li) - Task Time Consumption [ms/cycle]:")
             for loc, rate in sorted(vr.items()):
                 lines.append(f"  VR({loc}) = {rate:.6e} ms/cycle")
             lines.append("")
-        
+
         # VE - Task Energy
-        ve = env_dict.get('VE', {})
+        ve = env_dict.get("VE", {})
         if ve:
             lines.append("VE(li) - Task Energy Consumption [mJ/cycle]:")
             for loc, energy in sorted(ve.items()):
                 lines.append(f"  VE({loc}) = {energy:.6e} mJ/cycle")
-        
+
         return "\n".join(lines)
 
     def _format_params(self, params: dict):
@@ -150,10 +167,10 @@ class OutputAgent(BaseAgent):
         """Get human-readable mode description following paper."""
         if not params:
             return "Unknown mode"
-        
-        delta_t = params.get('delta_t', 1)
-        delta_e = params.get('delta_e', 1)
-        
+
+        delta_t = params.get("delta_t", 1)
+        delta_e = params.get("delta_e", 1)
+
         if delta_t == 1 and delta_e == 1:
             return "BALANCED MODE: U(w,p) = T + E (minimize both time and energy)"
         elif delta_t == 1 and delta_e == 0:
@@ -165,19 +182,19 @@ class OutputAgent(BaseAgent):
 
     def _log_interaction(self, agent: str, prompt: str, response: str, msg_type: str):
         """Log agent interactions to file."""
-        with open(self.log_file, 'a', encoding='utf-8') as f:
+        with open(self.log_file, "a", encoding="utf-8") as f:
             if msg_type == "PROMPT":
-                f.write("\n" + "="*80 + "\n")
+                f.write("\n" + "=" * 80 + "\n")
                 f.write(f"{agent} AGENT - PROMPT\n")
-                f.write("="*80 + "\n")
+                f.write("=" * 80 + "\n")
                 f.write(prompt)
-                f.write("\n" + "="*80 + "\n\n")
+                f.write("\n" + "=" * 80 + "\n\n")
             elif msg_type == "RESPONSE":
-                f.write("\n" + "="*80 + "\n")
+                f.write("\n" + "=" * 80 + "\n")
                 f.write(f"{agent} AGENT - RESPONSE\n")
-                f.write("="*80 + "\n")
+                f.write("=" * 80 + "\n")
                 f.write(response)
-                f.write("\n" + "="*80 + "\n\n")
+                f.write("\n" + "=" * 80 + "\n\n")
 
     def run(self, state: dict):
         plan = state.get("plan", "")
@@ -186,17 +203,15 @@ class OutputAgent(BaseAgent):
         workflow_dict = state.get("workflow", {})
         env_dict = state.get("env", {})
         params = state.get("params", {})
-        
-        output = self.format_output(plan, evaluation, optimal_policy, 
-                                    workflow_dict, env_dict, params)
-        
-        print("\n" + "="*60)
+
+        output = self.format_output(
+            plan, evaluation, optimal_policy, workflow_dict, env_dict, params
+        )
+
+        print("\n" + "=" * 60)
         print("FINAL OUTPUT (with CoT explanation):")
-        print("="*60)
+        print("=" * 60)
         print(json.dumps(json.loads(output), indent=2))
-        print("="*60 + "\n")
-        
-        return {
-            **state,
-            "output": output
-        }
+        print("=" * 60 + "\n")
+
+        return {**state, "output": output}

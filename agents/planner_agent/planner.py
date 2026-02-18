@@ -7,7 +7,9 @@ from agents.base_agent.base_agent import BaseAgent
 class PlannerAgent(BaseAgent):
     """Planner agent with Chain-of-Thought reasoning and memory-based few-shot prompting."""
 
-    def __init__(self, api_key: str, log_file: str = "agent_trace.txt", memory_manager=None):
+    def __init__(
+        self, api_key: str, log_file: str = "agent_trace.txt", memory_manager=None
+    ):
         super().__init__(api_key)
         self.log_file = log_file
         self.memory_manager = memory_manager  # WorkflowMemory instance
@@ -15,17 +17,17 @@ class PlannerAgent(BaseAgent):
     def _format_env_details(self, env: dict):
         """Format environment details following paper Section III-A."""
         details = []
-        
+
         # Extract location types
-        locations = env.get('locations', {})
+        locations = env.get("locations", {})
         if locations:
             details.append("Available Locations (l):")
             for loc_id, loc_type in sorted(locations.items()):
                 details.append(f"  l={loc_id}: {loc_type.upper()}")
             details.append("")
-        
+
         # DR: Data Time Consumption (ms/byte) - Paper Section III-A
-        dr = env.get('DR', {})
+        dr = env.get("DR", {})
         if dr:
             details.append("DR(li, lj) - Data Time Consumption (ms/byte):")
             details.append("  Time to move 1 byte of data between locations")
@@ -33,54 +35,56 @@ class PlannerAgent(BaseAgent):
                 if src != dst:
                     details.append(f"    DR({src}, {dst}) = {rate:.6e} ms/byte")
             details.append("")
-        
+
         # DE: Data Energy Consumption (mJ/byte) - Paper Section III-A
-        de = env.get('DE', {})
+        de = env.get("DE", {})
         if de:
             details.append("DE(li) - Data Energy Consumption (mJ/byte):")
             details.append("  Energy for processing 1 byte at location")
             for loc, coeff in sorted(de.items()):
                 details.append(f"    DE({loc}) = {coeff:.6e} mJ/byte")
             details.append("")
-        
+
         # VR: Task Time Consumption (ms/cycle) - Paper Section III-A
-        vr = env.get('VR', {})
+        vr = env.get("VR", {})
         if vr:
             details.append("VR(li) - Task Time Consumption (ms/cycle):")
             details.append("  Time to execute 1 CPU cycle at location")
             for loc, rate in sorted(vr.items()):
                 details.append(f"    VR({loc}) = {rate:.6e} ms/cycle")
             details.append("")
-        
+
         # VE: Task Energy Consumption (mJ/cycle) - Paper Section III-A
-        ve = env.get('VE', {})
+        ve = env.get("VE", {})
         if ve:
             details.append("VE(li) - Task Energy Consumption (mJ/cycle):")
             details.append("  Energy per CPU cycle at location")
             for loc, energy in sorted(ve.items()):
                 details.append(f"    VE({loc}) = {energy:.6e} mJ/cycle")
-        
+
         return "\n".join(details)
-    
+
     def _format_workflow_details(self, workflow: dict):
         """Format workflow details following paper Section III-B."""
-        tasks = workflow.get('tasks', {})
-        edges = workflow.get('edges', {})
-        N = workflow.get('N', 0)
-        
+        tasks = workflow.get("tasks", {})
+        edges = workflow.get("edges", {})
+        N = workflow.get("N", 0)
+
         details = []
         details.append("Workflow DAG: w = {V, D}")
-        details.append(f"  N = {N} (number of real tasks, excluding entry v_0 and exit v_{N+1})")
+        details.append(
+            f"  N = {N} (number of real tasks, excluding entry v_0 and exit v_{N+1})"
+        )
         details.append("")
-        
+
         # Format each task following paper notation
         for task_id in sorted(tasks.keys()):
             task_data = tasks[task_id]
-            v_i = task_data.get('v', 0)
-            
+            v_i = task_data.get("v", 0)
+
             details.append(f"Task {task_id}:")
             details.append(f"  v_{task_id} = {v_i:.2e} CPU cycles")
-            
+
             # Convert edges list to dict if necessary
             edges_dict = {}
             if isinstance(edges, list):
@@ -92,35 +96,39 @@ class PlannerAgent(BaseAgent):
                     edges_dict[(u, v)] = bytes_val
             else:
                 edges_dict = edges
-            
+
             # Find J_i (parents) and K_i (children)
             parents = [j for (j, k), _ in edges_dict.items() if k == int(task_id)]
             children = [k for (j, k), _ in edges_dict.items() if j == int(task_id)]
-            
+
             if parents:
-                details.append(f"  J_{task_id} (parents): {{{', '.join(map(str, parents))}}}")
+                details.append(
+                    f"  J_{task_id} (parents): {{{', '.join(map(str, parents))}}}"
+                )
             else:
                 details.append(f"  J_{task_id} (parents): empty")
-            
+
             if children:
-                details.append(f"  K_{task_id} (children): {{{', '.join(map(str, children))}}}")
+                details.append(
+                    f"  K_{task_id} (children): {{{', '.join(map(str, children))}}}"
+                )
                 details.append(f"  Data dependencies d_{{i,j}}:")
                 for k in children:
                     d_ij = edges_dict.get((int(task_id), k), 0)
                     details.append(f"    d_{{{task_id},{k}}} = {d_ij:.2e} bytes")
             else:
                 details.append(f"  K_{task_id} (children): empty")
-            
+
             details.append("")
-        
+
         return "\n".join(details)
 
     def create_plan(self, env: dict, workflow: dict, params: dict):
         """Create a detailed plan using Chain-of-Thought reasoning with few-shot examples."""
-        
+
         env_details = self._format_env_details(env)
         workflow_details = self._format_workflow_details(workflow)
-        
+
         # Format parameters with paper context
         params_formatted = [
             "Cost Coefficients (Equations 1-2):",
@@ -130,32 +138,34 @@ class PlannerAgent(BaseAgent):
             "Mode Weights (Equation 8):",
             f"  delta_t = {params.get('delta_t', 1)} (time weight)",
             f"  delta_e = {params.get('delta_e', 1)} (energy weight)",
-            ""
+            "",
         ]
-        
+
         # Add mode description
-        delta_t = params.get('delta_t', 1)
-        delta_e = params.get('delta_e', 1)
+        delta_t = params.get("delta_t", 1)
+        delta_e = params.get("delta_e", 1)
         if delta_t == 1 and delta_e == 1:
             params_formatted.append("  Mode: BALANCED (minimize both time and energy)")
         elif delta_t == 1 and delta_e == 0:
             params_formatted.append("  Mode: LOW LATENCY (minimize time only)")
         elif delta_t == 0 and delta_e == 1:
             params_formatted.append("  Mode: LOW POWER (minimize energy only)")
-        
+
         params_str = "\n".join(params_formatted)
-        
+
         # Retrieve similar executions for few-shot prompting
         few_shot_examples = ""
         learning_prompt = ""
-        
+
         if self.memory_manager:
             similar_executions = self.memory_manager.retrieve_similar_executions(
                 workflow, env, params, top_k=3
             )
-            
+
             if similar_executions:
-                few_shot_examples = self.memory_manager.format_few_shot_examples(similar_executions)
+                few_shot_examples = self.memory_manager.format_few_shot_examples(
+                    similar_executions
+                )
                 learning_prompt = """
 **Learning from Similar Cases:**
 Based on the historical examples above, identify patterns that might apply to the current scenario:
@@ -167,32 +177,32 @@ Apply these insights to guide your analysis of the current scenario.
 """
             else:
                 few_shot_examples = "## Historical Similar Cases:\nNo similar historical cases found. Analyzing from first principles.\n"
-        
+
         # Load prompt template from file
-        prompt_file_path = os.path.join(os.path.dirname(__file__), 'planner_prompt.md')
-        with open(prompt_file_path, 'r', encoding='utf-8') as f:
+        prompt_file_path = os.path.join(os.path.dirname(__file__), "planner_prompt.md")
+        with open(prompt_file_path, "r", encoding="utf-8") as f:
             prompt_template = f.read()
-        
+
         prompt = prompt_template.format(
             few_shot_examples=few_shot_examples,
             env_details=env_details,
             workflow_details=workflow_details,
             params=params_str,
-            learning_prompt=learning_prompt
+            learning_prompt=learning_prompt,
         )
-        
+
         # Log the prompt
         self._log_interaction("PLANNER", prompt, None, "PROMPT")
-        
+
         # Use CoT reasoning
         result = self.think_with_cot(prompt, return_reasoning=True)
         if isinstance(result, dict):
-            reasoning = result.get('reasoning', 'No reasoning provided')
-            answer = result.get('answer', 'No answer provided')
+            reasoning = result.get("reasoning", "No reasoning provided")
+            answer = result.get("answer", "No answer provided")
         else:
             reasoning = str(result)
             answer = str(result)
-        
+
         full_response = f"""
 ## Chain-of-Thought Reasoning:
 {reasoning}
@@ -200,27 +210,27 @@ Apply these insights to guide your analysis of the current scenario.
 ## Strategic Plan for Evaluator:
 {answer}
 """
-        
+
         # Log the response
         self._log_interaction("PLANNER", None, full_response, "RESPONSE")
-        
+
         return full_response
 
     def _log_interaction(self, agent: str, prompt: str, response: str, msg_type: str):
         """Log agent interactions to file."""
-        with open(self.log_file, 'a', encoding='utf-8') as f:
+        with open(self.log_file, "a", encoding="utf-8") as f:
             if msg_type == "PROMPT":
-                f.write("\n" + "="*80 + "\n")
+                f.write("\n" + "=" * 80 + "\n")
                 f.write(f"{agent} AGENT - PROMPT\n")
-                f.write("="*80 + "\n")
+                f.write("=" * 80 + "\n")
                 f.write(prompt)
-                f.write("\n" + "="*80 + "\n\n")
+                f.write("\n" + "=" * 80 + "\n\n")
             elif msg_type == "RESPONSE":
-                f.write("\n" + "="*80 + "\n")
+                f.write("\n" + "=" * 80 + "\n")
                 f.write(f"{agent} AGENT - RESPONSE\n")
-                f.write("="*80 + "\n")
+                f.write("=" * 80 + "\n")
                 f.write(response)
-                f.write("\n" + "="*80 + "\n\n")
+                f.write("\n" + "=" * 80 + "\n\n")
 
     def run(self, state: dict):
         """
@@ -230,16 +240,16 @@ Apply these insights to guide your analysis of the current scenario.
         env = state.get("env", {})
         workflow = state.get("workflow", {})
         params = state.get("params", {})
-        
+
         plan = self.create_plan(env, workflow, params)
 
         new_state = dict(state)
         new_state["plan"] = plan
-        
-        print("\n" + "="*60)
+
+        print("\n" + "=" * 60)
         print("PLANNER OUTPUT (with CoT reasoning + Few-Shot Learning):")
-        print("="*60)
+        print("=" * 60)
         print(plan[:500] + "..." if len(plan) > 500 else plan)
-        print("="*60 + "\n")
-        
+        print("=" * 60 + "\n")
+
         return new_state
