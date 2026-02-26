@@ -596,7 +596,7 @@ if __name__ == "__main__":
     # ========================================================================
     # Limit number of experiments for testing
     start = 0
-    end = 1  # Set to None to run all
+    end = 3  # Set to None to run all
 
     print("\nLoading dataset from dataset/dataset.json...")
     try:

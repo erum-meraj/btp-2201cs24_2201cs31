@@ -171,15 +171,46 @@ class EvaluatorAgent:
 
         # Step 2: Generate all candidates
         print("\n[Step 2/3] Generating candidate policies from all sources...")
-        candidates = self.candidate_generator.generate_candidates(
-            num_tasks=num_tasks,
-            location_ids=location_ids,
-            workflow_dict=workflow_dict,
-            env_dict=env_dict,
-            params=params,
-            llm_candidates=llm_candidates,
-            max_exhaustive=10000,
-        )
+        # Use candidate_generator's generate_candidates when available; otherwise fall back
+        if hasattr(self.candidate_generator, "generate_candidates"):
+            candidates = self.candidate_generator.generate_candidates(
+                num_tasks=num_tasks,
+                location_ids=location_ids,
+                workflow_dict=workflow_dict,
+                env_dict=env_dict,
+                params=params,
+                llm_candidates=llm_candidates,
+                max_exhaustive=10000,
+            )
+        else:
+            # Backwards-compatible fallback: try to use generate_next_batch or simple systematic generation
+            candidates = []
+            if llm_candidates:
+                candidates.extend(llm_candidates)
+
+            try:
+                # Ask the older agent for several batches
+                batch = self.candidate_generator.generate_next_batch(
+                    num_tasks, location_ids, workflow_dict, env_dict, params, batch_size=50
+                )
+                candidates.extend(batch)
+            except Exception:
+                # Systematic fallbacks
+                from itertools import product
+                for loc in location_ids:
+                    candidates.append(tuple(loc for _ in range(num_tasks)))
+                for start in range(min(len(location_ids), 3)):
+                    candidates.append(tuple(location_ids[(start + i) % len(location_ids)] for i in range(num_tasks)))
+
+            # Deduplicate while preserving order
+            seen = set()
+            unique = []
+            for c in candidates:
+                t = tuple(int(x) for x in c)
+                if t not in seen:
+                    seen.add(t)
+                    unique.append(t)
+            candidates = unique
 
         # Apply constraints
         fixed = params.get("fixed_locations", {})
@@ -246,27 +277,28 @@ class EvaluatorAgent:
         # Format task details
         task_details = self._format_task_details(tasks, edges)
 
-        # Load prompt template
-        prompt_file_path = os.path.join(
-            os.path.dirname(__file__), "evaluator_prompt.md"
-        )
-
-        # Fallback inline prompt if file doesn't exist
+        # Load prompt template - require prompt.md to be present in evaluator folder
+        prompt_file_path = os.path.join(os.path.dirname(__file__), "prompt.md")
         if not os.path.exists(prompt_file_path):
-            prompt = self._create_inline_prompt(
-                env_details, num_tasks, task_details, params, plan, location_ids
-            )
-        else:
-            with open(prompt_file_path, "r", encoding="utf-8") as f:
-                prompt_template = f.read()
-            prompt = prompt_template.format(
-                env_details=env_details,
-                N=num_tasks,
-                task_details=task_details,
-                params=params,
-                plan=plan,
-                location_ids=location_ids,
-            )
+            msg = f"Required prompt template not found: {prompt_file_path}"
+            try:
+                logger = get_logger(self.log_file)
+                logger.error("Evaluator", msg)
+            except Exception:
+                pass
+            raise FileNotFoundError(msg)
+
+        with open(prompt_file_path, "r", encoding="utf-8") as f:
+            prompt_template = f.read()
+
+        prompt = prompt_template.format(
+            env_details=env_details,
+            N=num_tasks,
+            task_details=task_details,
+            params=json.dumps(params, indent=2),
+            plan=(plan or "")[:800],
+            location_ids=location_ids,
+        )
 
         # Log and get LLM response
         self._log_interaction("EVALUATOR", prompt, None, "PROMPT")
@@ -285,42 +317,6 @@ class EvaluatorAgent:
         )
 
         return policies
-
-    def _create_inline_prompt(
-        self, env_details, num_tasks, task_details, params, plan, location_ids
-    ):
-        """Create an inline prompt when template file is not available."""
-        return f"""You are the Evaluator Agent tasked with suggesting candidate offloading policies.
-
-## Environment:
-{env_details}
-
-## Workflow:
-Number of tasks (N): {num_tasks}
-{task_details}
-
-## Parameters:
-{json.dumps(params, indent=2)}
-
-## Strategic Plan:
-{plan}
-
-## Available Locations:
-{location_ids}
-
-## Your Task:
-Analyze the workflow and environment to suggest 3-5 promising candidate policies.
-Each policy should be a sequence of {num_tasks} location IDs (one for each task).
-
-Consider:
-- Task computation requirements (v_i)
-- Data dependencies (d_i,j)
-- Location capabilities (VR, VE)
-- Network characteristics (DR, DE)
-- The strategic plan guidance
-
-Provide your answer as a list of policies in format: [loc1, loc2, ..., loc{num_tasks}]
-"""
 
     def _format_task_details(self, tasks: Dict, edges) -> str:
         """Format task details for prompt."""

@@ -6,3 +6,9 @@ workflow_outputs/
 memory_store/
 trace_files/
 .DS_Store
+
+# Ignore agent-generated trace/log files
+agent_trace*.txt
+agent_trace*.log
+example_trace*.txt
+*_trace.*

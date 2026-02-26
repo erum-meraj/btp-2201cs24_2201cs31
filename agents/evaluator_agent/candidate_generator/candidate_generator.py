@@ -8,6 +8,7 @@ Generates promising candidate policies using LLM reasoning:
 """
 
 from typing import List, Tuple, Dict, Any, Optional
+import os
 import json
 
 
@@ -145,60 +146,38 @@ class CandidateGenerationAgent:
         """
         # Format problem structure
         problem_summary = self._format_problem(workflow_dict, env_dict, params, num_tasks, location_ids)
-        
+
         # Format evaluation history
         history_summary = self._format_evaluation_history()
-        
+
         # Format search state
         search_state = self._format_search_state(num_tasks, location_ids)
-        
-        prompt = f"""You are an intelligent candidate generation agent in a task offloading optimization system.
 
-## Your Role
-Generate the next batch of {batch_size} promising placement policies to evaluate based on:
-1. Problem characteristics
-2. Past evaluation results
-3. Optimization patterns
+        # Load prompt template file (prompt.md) from same folder and require it to exist
+        prompt_file_path = os.path.join(os.path.dirname(__file__), "prompt.md")
+        if not os.path.exists(prompt_file_path):
+            msg = f"Required prompt template not found: {prompt_file_path}"
+            if self.logger:
+                self.logger.error("CandidateAgent", msg)
+            raise FileNotFoundError(msg)
 
-## Problem Structure
-{problem_summary}
+        # Read and format the template
+        with open(prompt_file_path, "r", encoding="utf-8") as f:
+            template = f.read()
 
-## Evaluation History
-{history_summary}
+        try:
+            prompt = template.format(
+                batch_size=batch_size,
+                problem_summary=problem_summary,
+                history_summary=history_summary,
+                search_state=search_state,
+            )
+        except Exception as e:
+            msg = f"Failed to format prompt template: {e}"
+            if self.logger:
+                self.logger.error("CandidateAgent", msg)
+            raise
 
-## Search State
-{search_state}
-
-## Task
-Using Chain-of-Thought reasoning:
-
-1. **Analyze**: What patterns emerge from evaluation history?
-2. **Identify**: Which task-location combinations seem promising?
-3. **Reason**: Why would these placements minimize cost?
-4. **Generate**: Propose {batch_size} specific policies to try next
-
-**Output Format** (JSON):
-```json
-{{
-  "reasoning": "Your step-by-step reasoning about promising regions to explore",
-  "patterns_identified": ["Pattern 1", "Pattern 2", ...],
-  "candidates": [
-    {{"policy": [loc1, loc2, ..., locN], "rationale": "Why this policy is promising"}},
-    ...
-  ]
-}}
-```
-
-Focus on:
-- Task dependencies → Co-locate dependent tasks to reduce data transfer
-- Compute intensity → Heavy tasks on powerful locations (edge/cloud)
-- Energy vs Time tradeoff → Based on mode (delta_t, delta_e)
-- Unexplored regions → Areas not yet evaluated
-- Refinements → Small variations of best policies found
-
-Generate diverse, intelligent candidates - avoid duplicates from explored set.
-"""
-        
         return prompt
     
     def _format_problem(
@@ -429,3 +408,138 @@ Generate diverse, intelligent candidates - avoid duplicates from explored set.
             'best_cost': self.best_cost,
             'explored_percentage': (len(self.explored_policies) / (3 ** 4)) * 100  # Assuming 4 tasks, 3 locs
         }
+
+    def generate_candidates(
+        self,
+        num_tasks: int,
+        location_ids: List[int],
+        workflow_dict: Dict[str, Any],
+        env_dict: Dict[str, Any],
+        params: Dict[str, Any],
+        llm_candidates: Optional[List[Tuple[int, ...]]] = None,
+        max_exhaustive: int = 10000,
+    ) -> List[Tuple[int, ...]]:
+        """
+        Generate a list of candidate policies combining LLM suggestions and systematic exploration.
+
+        Returns a de-duplicated list of policy tuples (length = num_tasks).
+        """
+        from itertools import product
+
+        candidates: List[Tuple[int, ...]] = []
+        seen = set()
+
+        # Helper to add candidate
+        def add(policy_tuple):
+            if policy_tuple not in seen:
+                seen.add(policy_tuple)
+                candidates.append(policy_tuple)
+
+        # 1) Add LLM-provided candidates first (if any)
+        if llm_candidates:
+            for p in llm_candidates:
+                try:
+                    pt = tuple(int(x) for x in p)
+                except Exception:
+                    continue
+                if len(pt) == num_tasks:
+                    add(pt)
+
+        # 2) Add skyline/simple patterns: all-local/all-edge/all-cloud and round-robin
+        for loc in location_ids:
+            policy = tuple(loc for _ in range(num_tasks))
+            add(policy)
+
+        for start in range(min(len(location_ids), num_tasks)):
+            policy = tuple(location_ids[(start + i) % len(location_ids)] for i in range(num_tasks))
+            add(policy)
+
+        # 3) Small perturbations around best_policy
+        if self.best_policy:
+            for i in range(num_tasks):
+                for loc in location_ids:
+                    if loc != self.best_policy[i]:
+                        p = list(self.best_policy)
+                        p[i] = loc
+                        add(tuple(p))
+
+        # 4) If still under the requested budget, sample exhaustively (bounded)
+        total_possible = len(location_ids) ** num_tasks
+        if len(candidates) < min(max_exhaustive, total_possible):
+            limit = min(max_exhaustive, total_possible)
+            count = len(candidates)
+            for combo in product(location_ids, repeat=num_tasks):
+                if combo in seen:
+                    continue
+                add(combo)
+                count += 1
+                if count >= limit:
+                    break
+
+        # Record explored policies
+        for c in candidates:
+            self.explored_policies.add(c)
+
+        if self.logger:
+            self.logger.tool_result("CandidateAgent", f"generate_candidates produced {len(candidates)} candidates")
+
+        return candidates
+
+    def filter_by_constraints(
+        self,
+        candidates: List[Tuple[int, ...]],
+        fixed: Dict[Any, Any],
+        allowed: Optional[Dict[Any, List[int]]] = None,
+    ) -> List[Tuple[int, ...]]:
+        """
+        Filter candidate policies by fixed and allowed constraints.
+
+        - fixed: mapping task_index -> required_location (task indices are 1-based or 0-based; we accept both)
+        - allowed: mapping task_index -> list_of_allowed_locations
+        """
+        filtered = []
+
+        def task_index_to_pos(k):
+            try:
+                ki = int(k)
+            except Exception:
+                return None
+            # Accept 1-based task indices (common in this repo) by converting to 0-based if necessary
+            if 1 <= ki <= (candidates and len(candidates[0]) or 0):
+                return ki - 1
+            # Otherwise assume it's already 0-based
+            return ki
+
+        for policy in candidates:
+            ok = True
+            # Check fixed
+            for tk, loc in (fixed or {}).items():
+                pos = task_index_to_pos(tk)
+                if pos is None or pos < 0 or pos >= len(policy):
+                    ok = False
+                    break
+                if policy[pos] != int(loc):
+                    ok = False
+                    break
+
+            if not ok:
+                continue
+
+            # Check allowed
+            if allowed:
+                for tk, allowed_locs in allowed.items():
+                    pos = task_index_to_pos(tk)
+                    if pos is None or pos < 0 or pos >= len(policy):
+                        ok = False
+                        break
+                    if policy[pos] not in allowed_locs:
+                        ok = False
+                        break
+
+            if ok:
+                filtered.append(policy)
+
+        if self.logger:
+            self.logger.tool_result("CandidateAgent", f"filter_by_constraints reduced {len(candidates)}→{len(filtered)} candidates")
+
+        return filtered

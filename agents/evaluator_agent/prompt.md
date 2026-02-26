@@ -6,15 +6,15 @@ You are helping optimize task offloading decisions for an edge-cloud system foll
 
 ## Workflow DAG (N = {N} tasks):
 
-{chr(10).join(task_details)}
+{task_details}
 
 ## Optimization Parameters:
 
-{json.dumps(params, indent=2)}
+{params}
 
 ## Planner's Strategic Analysis:
 
-{plan[:800]}
+{plan}
 
 ## Your Task:
 
