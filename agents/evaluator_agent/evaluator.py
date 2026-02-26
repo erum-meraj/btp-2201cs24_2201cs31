@@ -12,7 +12,7 @@ import os
 import json
 from typing import Dict, Any, List, Tuple
 from agents.evaluator_agent.candidate_generator.candidate_generator import (
-    CandidatePolicyGenerator,
+    CandidateGenerationAgent,
 )
 from agents.evaluator_agent.tools.utility_function import UtilityFunctionTool
 from agents.evaluator_agent.weak_solver.weak_solver import WeakSolverTool
@@ -56,7 +56,7 @@ class EvaluatorAgent:
         self.log_file = log_file
 
         # Initialize tools
-        self.candidate_generator = CandidatePolicyGenerator(memory_manager)
+        self.candidate_generator = CandidateGenerationAgent(base_agent, memory_manager=self.memory_manager)
         self.weak_solver = WeakSolverTool()
 
         # Utility tool will be initialized per run (needs evaluator instance)
