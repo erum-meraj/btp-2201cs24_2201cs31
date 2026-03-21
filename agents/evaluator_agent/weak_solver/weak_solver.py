@@ -52,14 +52,7 @@ class WeakSolverTool:
             - iterations: Number of iterations used
             - algorithm: Algorithm used
         """
-        # Placeholder implementation
-        print("\n[Weak Solver] Currently disabled (placeholder)")
-        print("  Future implementations will include:")
-        print("  - Genetic algorithms")
-        print("  - Simulated annealing")
-        print("  - Local search with hill climbing")
-        print("  - Reinforcement learning-based optimization")
-
+        # No optimization implemented yet; return initial policy as baseline.
         return {
             "policy": initial_policy,
             "cost": float("inf"),

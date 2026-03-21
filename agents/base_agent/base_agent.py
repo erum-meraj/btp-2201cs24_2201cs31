@@ -55,25 +55,6 @@ class BaseAgent:
 
         return content.strip()
 
-    def think(self, prompt: str):
-        """Deprecated: simple LLM invoke wrapper.
-
-        Kept for backwards compatibility. Prefer `think_with_cot` or the
-        Chain-of-Thought APIs. This wrapper emits a deprecation warning
-        and forwards to the underlying implementation to avoid changing
-        runtime behaviour.
-        """
-        warnings.warn(
-            "BaseAgent.think() is deprecated; use think_with_cot() instead",
-            DeprecationWarning,
-        )
-        return self._deprecated_think_impl(prompt)
-
-    def _deprecated_think_impl(self, prompt: str):
-        """Original implementation of `think` kept as a private deprecated impl."""
-        response = self.llm.invoke(prompt)
-        return self._extract_content(response)
-
     def think_with_cot(self, prompt: str, return_reasoning: bool = False):
         """
         Run LLM reasoning with Chain-of-Thought approach.
@@ -119,63 +100,3 @@ Do not include any text before <reasoning> or after </answer>.
         if return_reasoning:
             return {"reasoning": reasoning, "answer": answer}
         return answer
-
-    def think_with_self_consistency(self, prompt: str, num_samples: int = 3):
-        """
-        Use self-consistency: generate multiple reasoning paths and select most consistent answer.
-
-        Args:
-            prompt: The input prompt
-            num_samples: Number of reasoning paths to generate
-
-        Returns:
-            The most consistent answer with reasoning
-        """
-        warnings.warn(
-            "BaseAgent.think_with_self_consistency() is deprecated; use repeated calls to think_with_cot() and aggregate externally",
-            DeprecationWarning,
-        )
-        return self._deprecated_think_with_self_consistency_impl(prompt, num_samples)
-
-    def _deprecated_think_with_self_consistency_impl(
-        self, prompt: str, num_samples: int = 3
-    ):
-        """Deprecated implementation kept for compatibility.
-
-        Returns the first valid reasoning/answer pair generated (if any).
-        """
-        responses = []
-        for i in range(num_samples):
-            cot_prompt = f"""
-{prompt}
-
-Think through this step-by-step. This is reasoning path {i+1}/{num_samples}.
-Show your work and explain your reasoning clearly.
-
-IMPORTANT: Format your response EXACTLY as shown below:
-
-<reasoning>
-[Your step-by-step thinking]
-</reasoning>
-
-<answer>
-[Your final answer]
-</answer>
-"""
-            response = self.llm.invoke(cot_prompt)
-            content = self._extract_content(response)
-
-            reasoning_match = re.search(
-                r"<reasoning>(.*?)</reasoning>", content, re.DOTALL
-            )
-            answer_match = re.search(r"<answer>(.*?)</answer>", content, re.DOTALL)
-
-            if reasoning_match and answer_match:
-                responses.append(
-                    {
-                        "reasoning": reasoning_match.group(1).strip(),
-                        "answer": answer_match.group(1).strip(),
-                    }
-                )
-
-        return responses[0] if responses else {"reasoning": "", "answer": ""}

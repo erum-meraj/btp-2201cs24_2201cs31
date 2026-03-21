@@ -12,22 +12,22 @@ import os
 import json
 
 
-class CandidateGenerationAgent:
+class CandidatePolicyGenerator:
     """
     Generates candidate policies using LLM reasoning and learning.
-    
+
     Uses iterative approach:
     - Analyzes problem and generates promising candidates
     - Learns from evaluation results
     - Refines search until convergence
     """
     
-    def __init__(self, base_agent, memory_manager=None, logger=None):
+    def __init__(self, base_agent=None, memory_manager=None, logger=None):
         """
         Initialize the intelligent candidate agent.
-        
+
         Args:
-            base_agent: BaseAgent for LLM access
+            base_agent: BaseAgent for LLM access (optional, required only for LLM candidate generation)
             memory_manager: Optional memory for historical learning
             logger: AgenticLogger instance
         """
@@ -96,6 +96,9 @@ class CandidateGenerationAgent:
         
         # Get LLM's intelligent suggestions
         try:
+            if self.base_agent is None:
+                raise ValueError("No base_agent provided for LLM candidate generation")
+
             response = self.base_agent.think_with_cot(prompt, return_reasoning=True)
             reasoning = response.get('reasoning', '')
             answer = response.get('answer', '')
@@ -368,47 +371,6 @@ class CandidateGenerationAgent:
                     f"Policy evaluated: {cost:.6f} (current best: {self.best_cost:.6f})"
                 )
     
-    def should_continue(self, max_iterations: int = 10, convergence_threshold: int = 3) -> bool:
-        """
-        Determine if search should continue.
-        
-        Args:
-            max_iterations: Maximum iterations to run
-            convergence_threshold: Stop if no improvement for N iterations
-            
-        Returns:
-            True if should continue, False if converged or max reached
-        """
-        if self.iteration >= max_iterations:
-            if self.logger:
-                self.logger.tool("CandidateAgent", f"Reached max iterations ({max_iterations})")
-            return False
-        
-        # Check for convergence (no improvement in last N iterations)
-        if len(self.evaluation_history) >= convergence_threshold:
-            recent = self.evaluation_history[-convergence_threshold:]
-            best_in_recent = min(r['cost'] for r in recent)
-            
-            if best_in_recent >= self.best_cost:
-                if self.logger:
-                    self.logger.tool(
-                        "CandidateAgent",
-                        f"Converged: No improvement in last {convergence_threshold} iterations"
-                    )
-                return False
-        
-        return True
-    
-    def get_search_summary(self) -> Dict[str, Any]:
-        """Get summary of search process."""
-        return {
-            'total_iterations': self.iteration,
-            'total_evaluated': len(self.evaluation_history),
-            'best_policy': self.best_policy,
-            'best_cost': self.best_cost,
-            'explored_percentage': (len(self.explored_policies) / (3 ** 4)) * 100  # Assuming 4 tasks, 3 locs
-        }
-
     def generate_candidates(
         self,
         num_tasks: int,
@@ -485,6 +447,50 @@ class CandidateGenerationAgent:
 
         return candidates
 
+    def _generate_systematic_candidates(self, num_tasks: int, location_ids: List[int]) -> List[Tuple[int, ...]]:
+        """Legacy helper used by compatibility tests."""
+        generated = []
+
+        for loc in location_ids:
+            generated.append(tuple(loc for _ in range(num_tasks)))
+
+        for start in range(min(len(location_ids), 3)):
+            generated.append(tuple(location_ids[(start + i) % len(location_ids)] for i in range(num_tasks)))
+
+        # De-duplicate while preserving order
+        return self._deduplicate(generated)
+
+    def _deduplicate(self, policies: List[Tuple[int, ...]]) -> List[Tuple[int, ...]]:
+        """Legacy deduplication helper used by compatibility tests."""
+        seen = set()
+        unique = []
+        for p in policies:
+            if p not in seen:
+                seen.add(p)
+                unique.append(p)
+        return unique
+
+    def _satisfies_constraints(
+        self,
+        policy: Tuple[int, ...],
+        fixed: Optional[Dict[Any, Any]] = None,
+        allowed: Optional[Dict[Any, List[int]]] = None,
+    ) -> bool:
+        """Check if policy satisfies fixed/allowed constraints."""
+        if fixed:
+            for tk, loc in fixed.items():
+                idx = int(tk) - 1 if isinstance(tk, int) and tk > 0 else int(tk)
+                if idx < 0 or idx >= len(policy) or policy[idx] != int(loc):
+                    return False
+
+        if allowed:
+            for tk, allowed_locs in allowed.items():
+                idx = int(tk) - 1 if isinstance(tk, int) and tk > 0 else int(tk)
+                if idx < 0 or idx >= len(policy) or policy[idx] not in allowed_locs:
+                    return False
+
+        return True
+
     def filter_by_constraints(
         self,
         candidates: List[Tuple[int, ...]],
@@ -505,7 +511,7 @@ class CandidateGenerationAgent:
             except Exception:
                 return None
             # Accept 1-based task indices (common in this repo) by converting to 0-based if necessary
-            if 1 <= ki <= (candidates and len(candidates[0]) or 0):
+            if 1 <= ki <= (len(candidates[0]) if candidates else 0):
                 return ki - 1
             # Otherwise assume it's already 0-based
             return ki
@@ -543,3 +549,7 @@ class CandidateGenerationAgent:
             self.logger.tool_result("CandidateAgent", f"filter_by_constraints reduced {len(candidates)}→{len(filtered)} candidates")
 
         return filtered
+
+
+# Backward compatibility alias for legacy interfaces
+CandidateGenerationAgent = CandidatePolicyGenerator

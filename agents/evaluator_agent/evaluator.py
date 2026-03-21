@@ -18,6 +18,7 @@ from agents.evaluator_agent.tools.utility_function import UtilityFunctionTool
 from agents.evaluator_agent.weak_solver.weak_solver import WeakSolverTool
 from core.logger import get_logger
 
+
 class EvaluatorAgent:
     """
     Supervisor agent that coordinates policy search.
@@ -56,7 +57,9 @@ class EvaluatorAgent:
         self.log_file = log_file
 
         # Initialize tools
-        self.candidate_generator = CandidateGenerationAgent(base_agent, memory_manager=self.memory_manager)
+        self.candidate_generator = CandidateGenerationAgent(
+            base_agent, memory_manager=self.memory_manager
+        )
         self.weak_solver = WeakSolverTool()
 
         # Utility tool will be initialized per run (needs evaluator instance)
@@ -73,12 +76,11 @@ class EvaluatorAgent:
             Updated state with evaluation, optimal_policy, best_cost
         """
         try:
-            
             logger = get_logger(self.log_file)
             logger.evaluator("Starting policy search and evaluation")
         except ImportError:
             logger = None
-            
+
         # Extract state components
         workflow_dict = state.get("workflow")
         env_dict = state.get("env", {})
@@ -108,8 +110,12 @@ class EvaluatorAgent:
             optimal_policy = list(result["best_policy"])
             best_cost = result["best_cost"]
             if logger:
-                logger.evaluator(f"Optimal policy: {optimal_policy} | Cost: {best_cost:.6f}")
-                logger.evaluator(f"Search complete: {result['evaluated']} evaluated, {result['skipped']} skipped")
+                logger.evaluator(
+                    f"Optimal policy: {optimal_policy} | Cost: {best_cost:.6f}"
+                )
+                logger.evaluator(
+                    f"Search complete: {result['evaluated']} evaluated, {result['skipped']} skipped"
+                )
 
         return {
             **state,
@@ -191,16 +197,27 @@ class EvaluatorAgent:
             try:
                 # Ask the older agent for several batches
                 batch = self.candidate_generator.generate_next_batch(
-                    num_tasks, location_ids, workflow_dict, env_dict, params, batch_size=50
+                    num_tasks,
+                    location_ids,
+                    workflow_dict,
+                    env_dict,
+                    params,
+                    batch_size=50,
                 )
                 candidates.extend(batch)
             except Exception:
                 # Systematic fallbacks
                 from itertools import product
+
                 for loc in location_ids:
                     candidates.append(tuple(loc for _ in range(num_tasks)))
                 for start in range(min(len(location_ids), 3)):
-                    candidates.append(tuple(location_ids[(start + i) % len(location_ids)] for i in range(num_tasks)))
+                    candidates.append(
+                        tuple(
+                            location_ids[(start + i) % len(location_ids)]
+                            for i in range(num_tasks)
+                        )
+                    )
 
             # Deduplicate while preserving order
             seen = set()
@@ -423,7 +440,7 @@ class EvaluatorAgent:
         params: Dict[str, Any],
     ) -> None:
         """Print problem information."""
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"EVALUATOR: Searching for optimal offloading policy")
         print(f"  Tasks (N): {num_tasks}")
         print(f"  Locations: {num_locations} with IDs {location_ids}")
@@ -440,7 +457,7 @@ class EvaluatorAgent:
         if allowed:
             print(f"  Allowed Constraints: {allowed}")
 
-        print(f"{'='*60}\n")
+        print(f"{'=' * 60}\n")
 
     def _log_interaction(
         self, agent: str, prompt: str, response: str, msg_type: str

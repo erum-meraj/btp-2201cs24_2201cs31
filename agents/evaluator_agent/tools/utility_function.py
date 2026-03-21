@@ -199,20 +199,3 @@ class UtilityFunctionTool:
             'all_results': all_results
         }
     
-    def _print_breakdown(
-        self,
-        policy: Tuple[int, ...],
-        result: Dict[str, float]
-    ) -> None:
-        """Print detailed cost breakdown (kept for backward compatibility)."""
-        if self.logger:
-            self.logger.tool(
-                "Utility",
-                f"Breakdown for {policy}: "
-                f"Total={result['total']:.6f}, "
-                f"Time={result['time']:.6f}, "
-                f"Energy={result['energy']:.6f}, "
-                f"ED={result['ED']:.6f}, "
-                f"EV={result['EV']:.6f}, "
-                f"Δ_max={result['delta_max']:.6f}ms"
-            )
